@@ -36,7 +36,6 @@ public class SimpleScheduler {
         this.eventQueue = new PriorityQueue<>();
 
         // 注册实体到物理引擎以便检测
-        // physicsEngine.registerEntity(...)
     }
 
     public void registerEntity(Entity entity) {

@@ -25,5 +25,11 @@
             <artifactId>simulation-api</artifactId>
             <version>${project.version}</version>
         </dependency>
+
+        <dependency>
+            <groupId>com.port</groupId>
+            <artifactId>simulation-physics</artifactId>
+            <version>${project.version}</version>
+        </dependency>
     </dependencies>
 </project>

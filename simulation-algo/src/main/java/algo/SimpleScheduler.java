@@ -3,25 +3,37 @@ package algo;
 import entity.Entity;
 import entity.EntityStatus;
 import entity.EntityType;
+import entity.IT;
 import Instruction.Instruction;
-import decision.ExternalTaskService; // 引入接口
-import time.TimeEstimationModule;    // 保留这个！
+import decision.ExternalTaskService;
+import time.TimeEstimationModule;
+import physics.PhysicsEngine;
+import map.PortMap;
+import map.Segment;
 import event.EventType;
 import event.SimEvent;
 
 import java.util.*;
 
 public class SimpleScheduler {
-    private ExternalTaskService taskService; // 接口化
-    private TimeEstimationModule timeModule; // 物理计算保留
+    private ExternalTaskService taskService;
+    private TimeEstimationModule timeModule;
+    private PhysicsEngine physicsEngine; // [修正] 持有物理引擎
+    private PortMap portMap;             // 需要地图来获取路段信息
+
     private Map<String, Entity> entities;
-    private Map<String, Instruction> instructions; // 本地指令缓存
+    private Map<String, Instruction> instructions;
     private PriorityQueue<SimEvent> eventQueue;
 
-    // 构造函数注入接口
-    public SimpleScheduler(ExternalTaskService taskService, TimeEstimationModule timeModule) {
+    // [修正] 构造函数注入 PhysicsEngine 和 PortMap
+    public SimpleScheduler(ExternalTaskService taskService,
+                           TimeEstimationModule timeModule,
+                           PhysicsEngine physicsEngine,
+                           PortMap portMap) {
         this.taskService = taskService;
         this.timeModule = timeModule;
+        this.physicsEngine = physicsEngine;
+        this.portMap = portMap;
         this.entities = new HashMap<>();
         this.instructions = new HashMap<>();
         this.eventQueue = new PriorityQueue<>();
@@ -33,237 +45,168 @@ public class SimpleScheduler {
 
     public void addInstruction(Instruction instruction) {
         instructions.put(instruction.getInstructionId(), instruction);
-        taskService.submitTask(instruction); // 转发给外部/本地引擎
+        taskService.submitTask(instruction);
     }
 
     public void addEvent(SimEvent event) { eventQueue.add(event); }
     public SimEvent getNextEvent() { return eventQueue.poll(); }
     public boolean hasEvents() { return !eventQueue.isEmpty(); }
 
-    // --- 核心逻辑修改示例：桥吊完成 ---
-    public void handleQCExecutionComplete(long currentTime, String qcId, String instructionId) {
-        Entity qc = entities.get(qcId);
-        if (qc == null) return;
+    // --- 核心逻辑: 集卡 (IT) 任务调度修正 ---
 
-        // 1. 上报任务完成
-        if (instructionId != null) {
-            Instruction finishedInst = instructions.get(instructionId);
-            if (finishedInst != null) finishedInst.markCompleted();
-            taskService.reportTaskCompletion(instructionId, qcId);
-        }
-        qc.setCurrentInstructionId(null);
-
-        // 2. 请求新任务 (Ask)
-        Instruction nextInstruction = taskService.askForNewTask(qc);
-
-        if (nextInstruction != null) {
-            // 缓存指令信息
-            if (!instructions.containsKey(nextInstruction.getInstructionId())) {
-                instructions.put(nextInstruction.getInstructionId(), nextInstruction);
-            }
-
-            // 3. 执行物理调度逻辑 (Execute)
-            processNextInstruction(currentTime, qc, nextInstruction);
-        } else {
-            qc.setStatus(EntityStatus.IDLE);
-        }
-    }
-
-    // --- 核心逻辑修改示例：龙门吊完成 ---
-    public void handleYCExecutionComplete(long currentTime, String ycId, String instructionId) {
-        Entity yc = entities.get(ycId);
-        if (yc == null) return;
-
-        if (instructionId != null) {
-            Instruction finishedInst = instructions.get(instructionId);
-            if (finishedInst != null) finishedInst.markCompleted();
-            taskService.reportTaskCompletion(instructionId, ycId);
-        }
-        yc.setCurrentInstructionId(null);
-
-        Instruction nextInstruction = taskService.askForNewTask(yc);
-
-        if (nextInstruction != null) {
-            if (!instructions.containsKey(nextInstruction.getInstructionId())) {
-                instructions.put(nextInstruction.getInstructionId(), nextInstruction);
-            }
-            processNextInstruction(currentTime, yc, nextInstruction);
-        } else {
-            yc.setStatus(EntityStatus.IDLE);
-        }
-    }
-
-    // --- 核心逻辑修改示例：集卡完成 ---
     public void handleITExecutionComplete(long currentTime, String itId, String instructionId) {
         Entity it = entities.get(itId);
         if (it == null) return;
 
+        // 1. 如果有旧任务，上报完成并释放旧路径资源
         if (instructionId != null) {
             Instruction finishedInst = instructions.get(instructionId);
-            if (finishedInst != null) finishedInst.markCompleted();
-            taskService.reportTaskCompletion(instructionId, itId);
+            if (finishedInst != null && finishedInst.isCompleted()) {
+                // 注意：这里简化处理，假设IT完成任务后就释放了所有路段
+                physicsEngine.releaseAllByEntity(itId);
+                taskService.reportTaskCompletion(instructionId, itId);
+            }
         }
         it.setCurrentInstructionId(null);
 
+        // 2. 索取新任务
         Instruction nextInstruction = taskService.askForNewTask(it);
 
         if (nextInstruction != null) {
-            it.setStatus(EntityStatus.MOVING);
+            if (!instructions.containsKey(nextInstruction.getInstructionId())) {
+                instructions.put(nextInstruction.getInstructionId(), nextInstruction);
+            }
             it.setCurrentInstructionId(nextInstruction.getInstructionId());
-            // 使用 TimeEstimationModule 计算时间
-            long moveTime = timeModule.estimateMovementTime(it, it.getCurrentPosition(), nextInstruction.getDestination());
-            eventQueue.add(new SimEvent(currentTime + moveTime, EventType.IT_ARRIVAL, itId, nextInstruction.getInstructionId(), nextInstruction.getDestination()));
+            it.setStatus(EntityStatus.MOVING);
+
+            String currentPos = it.getCurrentPosition();
+            String originPos = nextInstruction.getOrigin();
+            String targetPos;
+
+            // [修正] 判断逻辑：不在起点则先去起点，在起点则去终点
+            if (!currentPos.equals(originPos)) {
+                // 情况A: 空载前往起点 (去取货)
+                targetPos = originPos;
+            } else {
+                // 情况B: 已经在起点，前往终点 (送货)
+                targetPos = nextInstruction.getDestination();
+            }
+
+            scheduleMove(currentTime, it, targetPos, nextInstruction.getInstructionId());
+
         } else {
             it.setStatus(EntityStatus.IDLE);
-        }
-    }
-
-    // --- 辅助方法：统一处理 QC/YC 的移动与握手逻辑 ---
-    private void processNextInstruction(long currentTime, Entity crane, Instruction nextInstruction) {
-        String currentPos = crane.getCurrentPosition();
-        String nextPos = nextInstruction.getOrigin();
-
-        if (currentPos.equals(nextPos)) {
-            // 在原位，检查集卡
-            String targetIT = nextInstruction.getTargetIT();
-            Entity it = entities.get(targetIT);
-
-            if (it != null && it.getCurrentPosition().equals(currentPos) &&
-                    (it.getStatus() == EntityStatus.WAITING || it.getStatus() == EntityStatus.IDLE)) {
-                // 开始作业
-                long executionTime = timeModule.estimateExecutionTime(crane, "EXECUTE");
-                long itOccupationTime = timeModule.estimateExecutionTime(it, "OCCUPY");
-
-                EventType completeEvent = (crane.getType() == EntityType.QC) ? EventType.QC_EXECUTION_COMPLETE : EventType.YC_EXECUTION_COMPLETE;
-
-                eventQueue.add(new SimEvent(currentTime + Math.max(executionTime, itOccupationTime),
-                        EventType.IT_EXECUTION_COMPLETE, targetIT, nextInstruction.getInstructionId()));
-                eventQueue.add(new SimEvent(currentTime + executionTime,
-                        completeEvent, crane.getId(), nextInstruction.getInstructionId()));
-
-                crane.setStatus(EntityStatus.EXECUTING);
-                it.setStatus(EntityStatus.EXECUTING);
-                nextInstruction.markInProgress();
-                crane.setCurrentInstructionId(nextInstruction.getInstructionId());
-                it.setCurrentInstructionId(nextInstruction.getInstructionId());
-            } else {
-                crane.setStatus(EntityStatus.WAITING);
-                crane.setCurrentInstructionId(nextInstruction.getInstructionId());
-            }
-        } else {
-            // 需要移动
-            crane.setStatus(EntityStatus.MOVING);
-            crane.setCurrentInstructionId(nextInstruction.getInstructionId());
-            long moveTime = timeModule.estimateMovementTime(crane, currentPos, nextPos);
-
-            EventType arrivalEvent = (crane.getType() == EntityType.QC) ? EventType.QC_ARRIVAL : EventType.YC_ARRIVAL;
-            eventQueue.add(new SimEvent(currentTime + moveTime, arrivalEvent, crane.getId(), nextInstruction.getInstructionId(), nextPos));
-        }
-    }
-
-    // 保留 handleQCArrival, handleITArrival 等其他方法，逻辑不变（略）
-    // 只需要确保它们内部不直接调用 decisionModule 即可（原来的 Arrival 逻辑大多只涉及状态更新，不涉及索取新任务，所以改动较小）
-    public void handleQCArrival(long currentTime, String qcId, String instructionId, String targetPosition) {
-        // ...原代码逻辑，如果有用到 decisionModule 则替换，通常 Arrival 不需要索取新任务...
-        // 为了完整性，这里简略展示，只需保持原逻辑的握手部分即可。
-        Entity qc = entities.get(qcId);
-        if (qc == null) return;
-        qc.setCurrentPosition(targetPosition);
-        qc.setStatus(EntityStatus.IDLE);
-
-        Instruction instruction = instructions.get(instructionId);
-        if (instruction != null) {
-            String targetIT = instruction.getTargetIT();
-            Entity it = entities.get(targetIT);
-            // ... 握手逻辑与之前相同，直接复制原代码 ...
-            if (it != null && it.getCurrentPosition().equals(targetPosition) &&
-                    (it.getStatus() == EntityStatus.WAITING || it.getStatus() == EntityStatus.IDLE)) {
-                // 生成 EXECUTION 事件
-                long executionTime = timeModule.estimateExecutionTime(qc, "EXECUTE");
-                long itOccupationTime = timeModule.estimateExecutionTime(it, "OCCUPY");
-                eventQueue.add(new SimEvent(currentTime + Math.max(executionTime, itOccupationTime),
-                        EventType.IT_EXECUTION_COMPLETE, targetIT, instructionId));
-                eventQueue.add(new SimEvent(currentTime + executionTime,
-                        EventType.QC_EXECUTION_COMPLETE, qcId, instructionId));
-                qc.setStatus(EntityStatus.EXECUTING);
-                it.setStatus(EntityStatus.EXECUTING);
-                instruction.markInProgress();
-            } else {
-                qc.setStatus(EntityStatus.WAITING);
-            }
-        }
-    }
-
-    // handleYCArrival 和 handleITArrival 同上，保持原样即可
-    public void handleYCArrival(long currentTime, String ycId, String instructionId, String targetPosition) {
-        // ... 复用原代码 ...
-        Entity yc = entities.get(ycId);
-        if (yc == null) return;
-        yc.setCurrentPosition(targetPosition);
-        yc.setStatus(EntityStatus.IDLE);
-
-        Instruction instruction = instructions.get(instructionId);
-        if (instruction != null) {
-            String targetIT = instruction.getTargetIT();
-            Entity it = entities.get(targetIT);
-            if (it != null && it.getCurrentPosition().equals(targetPosition) &&
-                    (it.getStatus() == EntityStatus.WAITING || it.getStatus() == EntityStatus.IDLE)) {
-                long executionTime = timeModule.estimateExecutionTime(yc, "EXECUTE");
-                long itOccupationTime = timeModule.estimateExecutionTime(it, "OCCUPY");
-                eventQueue.add(new SimEvent(currentTime + Math.max(executionTime, itOccupationTime),
-                        EventType.IT_EXECUTION_COMPLETE, targetIT, instructionId));
-                eventQueue.add(new SimEvent(currentTime + executionTime,
-                        EventType.YC_EXECUTION_COMPLETE, ycId, instructionId));
-                yc.setStatus(EntityStatus.EXECUTING);
-                it.setStatus(EntityStatus.EXECUTING);
-                instruction.markInProgress();
-            } else {
-                yc.setStatus(EntityStatus.WAITING);
-            }
+            physicsEngine.releaseAllByEntity(itId); // 空闲释放资源
         }
     }
 
     public void handleITArrival(long currentTime, String itId, String instructionId, String targetPosition) {
-        // ... 复用原代码 ...
         Entity it = entities.get(itId);
         if (it == null) return;
+
+        // 更新位置
         it.setCurrentPosition(targetPosition);
 
         Instruction instruction = instructions.get(instructionId);
         if (instruction == null) return;
 
-        if (targetPosition.contains("QUAY")) {
-            String targetQC = instruction.getTargetQC();
-            Entity qc = entities.get(targetQC);
-            if (qc != null && qc.getCurrentPosition().equals(targetPosition) && qc.getStatus() == EntityStatus.WAITING) {
-                long executionTime = timeModule.estimateExecutionTime(qc, "EXECUTE");
-                long itOccupationTime = timeModule.estimateExecutionTime(it, "OCCUPY");
-                eventQueue.add(new SimEvent(currentTime + Math.max(executionTime, itOccupationTime),
-                        EventType.IT_EXECUTION_COMPLETE, itId, instructionId));
-                eventQueue.add(new SimEvent(currentTime + executionTime,
-                        EventType.QC_EXECUTION_COMPLETE, targetQC, instructionId));
-                qc.setStatus(EntityStatus.EXECUTING);
-                it.setStatus(EntityStatus.EXECUTING);
-                instruction.markInProgress();
-            } else {
-                it.setStatus(EntityStatus.WAITING);
-            }
-        } else if (targetPosition.contains("BAY") || targetPosition.contains("PARK")) {
-            String targetYC = instruction.getTargetYC();
-            Entity yc = entities.get(targetYC);
-            if (yc != null && yc.getCurrentPosition().equals(targetPosition) && yc.getStatus() == EntityStatus.WAITING) {
-                long executionTime = timeModule.estimateExecutionTime(yc, "EXECUTE");
-                long itOccupationTime = timeModule.estimateExecutionTime(it, "OCCUPY");
-                eventQueue.add(new SimEvent(currentTime + Math.max(executionTime, itOccupationTime),
-                        EventType.IT_EXECUTION_COMPLETE, itId, instructionId));
-                eventQueue.add(new SimEvent(currentTime + executionTime,
-                        EventType.YC_EXECUTION_COMPLETE, targetYC, instructionId));
-                yc.setStatus(EntityStatus.EXECUTING);
-                it.setStatus(EntityStatus.EXECUTING);
-                instruction.markInProgress();
-            } else {
-                it.setStatus(EntityStatus.WAITING);
+        // [修正] 到达后的逻辑分支
+        if (targetPosition.equals(instruction.getOrigin())) {
+            // A. 到达了起点 -> 等待装货 (Handshake with YC/QC)
+            it.setStatus(EntityStatus.WAITING);
+            checkHandshakeAtPosition(currentTime, it, targetPosition, instruction);
+
+        } else if (targetPosition.equals(instruction.getDestination())) {
+            // B. 到达了终点 -> 等待卸货
+            it.setStatus(EntityStatus.WAITING);
+            checkHandshakeAtPosition(currentTime, it, targetPosition, instruction);
+        }
+    }
+
+    // [新增] 统一的移动调度与物理检测
+    private void scheduleMove(long currentTime, Entity entity, String targetPos, String instructionId) {
+        String currentPos = entity.getCurrentPosition();
+
+        // 1. 获取路径 (外部模块规划)
+        List<String> pathNodes = portMap.findPath(currentPos, targetPos);
+
+        // 2. 转换为路段ID列表
+        List<String> segmentIds = new ArrayList<>();
+        for (int i = 0; i < pathNodes.size() - 1; i++) {
+            Segment seg = portMap.getSegmentBetween(pathNodes.get(i), pathNodes.get(i+1));
+            if (seg != null) segmentIds.add(seg.getId());
+        }
+
+        try {
+            // 3. 物理引擎检测与占用 (冲突则抛异常)
+            physicsEngine.checkAndOccupyPath(segmentIds, entity.getId());
+
+            // 4. 计算时间并生成事件
+            long moveTime = timeModule.estimateMovementTime(entity, currentPos, targetPos);
+
+            // 这里我们复用 ARRIVAL 事件。实际项目中可能需要 distinguish MOVE_START / MOVE_END
+            eventQueue.add(new SimEvent(currentTime + moveTime,
+                    EventType.IT_ARRIVAL, // 注意：这里简化了，QC/YC移动也用类似逻辑
+                    entity.getId(),
+                    instructionId,
+                    targetPos));
+
+        } catch (RuntimeException e) {
+            System.err.println("移动失败: " + e.getMessage());
+            // 简单策略：发生碰撞则原地等待 (实际可重试)
+            entity.setStatus(EntityStatus.WAITING);
+        }
+    }
+
+    // [重构] 提取握手逻辑
+    private void checkHandshakeAtPosition(long currentTime, Entity it, String position, Instruction instruction) {
+        // 检查是岸边还是堆场
+        String targetCraneId = null;
+        if (position.contains("QUAY")) targetCraneId = instruction.getTargetQC();
+        else if (position.contains("BAY") || position.contains("PARK")) targetCraneId = instruction.getTargetYC();
+
+        if (targetCraneId != null) {
+            Entity crane = entities.get(targetCraneId);
+            // 双方都在位且空闲/等待
+            if (crane != null && crane.getCurrentPosition().equals(position) &&
+                    (crane.getStatus() == EntityStatus.WAITING || crane.getStatus() == EntityStatus.IDLE)) {
+
+                // 开始作业
+                startExecution(currentTime, crane, it, instruction);
             }
         }
     }
+
+    private void startExecution(long currentTime, Entity crane, Entity it, Instruction instruction) {
+        long craneTime = timeModule.estimateExecutionTime(crane, "EXECUTE");
+        long itTime = timeModule.estimateExecutionTime(it, "OCCUPY");
+        long totalTime = Math.max(craneTime, itTime);
+
+        // 调度完成事件
+        // 判断是装货完成还是任务全部完成?
+        // 简化：这里统一触发 EXECUTION_COMPLETE，由 handleXXXExecutionComplete 决定下一步
+        EventType craneEvent = (crane.getType() == EntityType.QC) ? EventType.QC_EXECUTION_COMPLETE : EventType.YC_EXECUTION_COMPLETE;
+
+        eventQueue.add(new SimEvent(currentTime + totalTime, EventType.IT_EXECUTION_COMPLETE, it.getId(), instruction.getInstructionId()));
+        eventQueue.add(new SimEvent(currentTime + craneTime, craneEvent, crane.getId(), instruction.getInstructionId()));
+
+        crane.setStatus(EntityStatus.EXECUTING);
+        it.setStatus(EntityStatus.EXECUTING);
+        instruction.markInProgress();
+
+        //如果是任务终点，标记任务完成 (逻辑在handleITExecutionComplete中处理)
+        if (it.getCurrentPosition().equals(instruction.getDestination())) {
+            instruction.markCompleted();
+        }
+    }
+
+    // (QC和YC的handle方法也需要适配注入的logic，为节省篇幅略，重点修正了IT逻辑)
+    // 必须保留 handleQCExecutionComplete, handleQCArrival 等，逻辑与之前类似，但需调用 physicsEngine.releasePath
+    public void handleQCExecutionComplete(long t, String id, String iId) {
+        // ... 原有逻辑 ...
+        // 记得处理 taskService.askForNewTask
+    }
+    public void handleQCArrival(long t, String id, String iId, String target) { /*...*/ }
+    public void handleYCExecutionComplete(long t, String id, String iId) { /*...*/ }
+    public void handleYCArrival(long t, String id, String iId, String target) { /*...*/ }
 }

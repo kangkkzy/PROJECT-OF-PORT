@@ -1,0 +1,28 @@
+[
+  {
+    "id": "INSTR_001",
+    "type": "LOAD_TO_SHIP",
+    "origin": "BAY_A01",
+    "destination": "QUAY_01",
+    "containerId": "CONT_001",
+    "containerWeight": 25.0,
+    "targetQC": "QC01",
+    "targetYC": "YC01",
+    "targetIT": "IT01",
+    "priority": 1,
+    "generateTime": 0
+  },
+  {
+    "id": "INSTR_002",
+    "type": "LOAD_TO_SHIP",
+    "origin": "BAY_B01",
+    "destination": "QUAY_02",
+    "containerId": "CONT_002",
+    "containerWeight": 28.0,
+    "targetQC": "QC02",
+    "targetYC": "YC02",
+    "targetIT": "IT02",
+    "priority": 1,
+    "generateTime": 10000
+  }
+]

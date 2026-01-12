@@ -37,25 +37,11 @@
       "name": "B区1贝"
     },
     {
-      "id": "BAY_B02",
-      "type": "BAY",
-      "x": 150.0,
-      "y": 20.0,
-      "name": "B区2贝"
-    },
-    {
       "id": "PARK_01",
       "type": "PARKING",
       "x": 50.0,
       "y": 50.0,
       "name": "1号停车区"
-    },
-    {
-      "id": "PARK_02",
-      "type": "PARKING",
-      "x": 50.0,
-      "y": 100.0,
-      "name": "2号停车区"
     },
     {
       "id": "ROAD_01",
@@ -115,14 +101,6 @@
     },
     {
       "id": "SEG_06",
-      "from": "ROAD_02",
-      "to": "BAY_B02",
-      "length": 50.0,
-      "maxSpeed": 4.0,
-      "isOneWay": false
-    },
-    {
-      "id": "SEG_07",
       "from": "ROAD_01",
       "to": "PARK_01",
       "length": 50.0,
@@ -130,15 +108,7 @@
       "isOneWay": false
     },
     {
-      "id": "SEG_08",
-      "from": "ROAD_02",
-      "to": "PARK_02",
-      "length": 50.0,
-      "maxSpeed": 5.0,
-      "isOneWay": false
-    },
-    {
-      "id": "SEG_09",
+      "id": "SEG_07",
       "from": "ROAD_01",
       "to": "ROAD_02",
       "length": 20.0,

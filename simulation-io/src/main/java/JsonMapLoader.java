@@ -8,111 +8,119 @@ import java.io.File;
 import java.io.InputStream;
 import java.util.*;
 
+/**
+ * 纯粹的JSON地图加载器
+ * 只负责从JSON文件加载地图配置，没有任何硬编码
+ */
 public class JsonMapLoader {
-    private ObjectMapper objectMapper;
+    private final ObjectMapper objectMapper;
 
     public JsonMapLoader() {
         this.objectMapper = new ObjectMapper();
     }
 
+    /**
+     * 从JSON文件加载地图（纯解析，无硬编码）
+     */
     public PortMap loadFromFile(String filePath) throws Exception {
         File file = new File(filePath);
+        if (!file.exists()) {
+            throw new IllegalArgumentException("地图文件不存在: " + filePath);
+        }
+
+        // 1. 读取JSON文件
         JsonNode root = objectMapper.readTree(file);
-        return parseMap(root);
-    }
 
-    public PortMap loadFromResource(String resourcePath) throws Exception {
-        try (InputStream is = getClass().getClassLoader().getResourceAsStream(resourcePath)) {
-            if (is == null) {
-                throw new IllegalArgumentException("Resource not found: " + resourcePath);
-            }
-            JsonNode root = objectMapper.readTree(is);
-            return parseMap(root);
-        }
-    }
+        // 2. 解析地图ID
+        String mapId = root.get("mapId").asText();
 
-    private PortMap parseMap(JsonNode root) {
-        String mapId = root.path("mapId").asText("default_map");
+        // 3. 解析节点数组
+        List<Node> nodes = parseNodes(root.get("nodes"));
+
+        // 4. 解析路段数组
+        List<Segment> segments = parseSegments(root.get("segments"));
+
+        // 5. 创建地图对象
         PortMap portMap = new PortMap(mapId);
+        nodes.forEach(portMap::addNode);
+        segments.forEach(portMap::addSegment);
 
-        // 解析节点
-        JsonNode nodesNode = root.path("nodes");
-        if (nodesNode.isArray()) {
-            for (JsonNode nodeJson : nodesNode) {
-                String id = nodeJson.path("id").asText();
-                String typeStr = nodeJson.path("type").asText("ROAD");
-                double x = nodeJson.path("x").asDouble(0.0);
-                double y = nodeJson.path("y").asDouble(0.0);
-                String name = nodeJson.path("name").asText(id);
-
-                NodeType type = NodeType.valueOf(typeStr);
-                Node node = new Node(id, type, x, y, name);
-                portMap.addNode(node);
-            }
-        }
-
-        // 解析路段
-        JsonNode segmentsNode = root.path("segments");
-        if (segmentsNode.isArray()) {
-            for (JsonNode segmentJson : segmentsNode) {
-                String id = segmentJson.path("id").asText();
-                String fromNodeId = segmentJson.path("from").asText();
-                String toNodeId = segmentJson.path("to").asText();
-                double length = segmentJson.path("length").asDouble(100.0);
-                double maxSpeed = segmentJson.path("maxSpeed").asDouble(5.0);
-                boolean isOneWay = segmentJson.path("isOneWay").asBoolean(false);
-
-                Segment segment = new Segment(id, fromNodeId, toNodeId, length, maxSpeed, isOneWay);
-                portMap.addSegment(segment);
-            }
-        }
+        // 6. 验证地图（检查节点引用）
+        validateMap(portMap);
 
         return portMap;
     }
 
-    public void saveToFile(PortMap portMap, String filePath) throws Exception {
-        Map<String, Object> mapData = new HashMap<>();
-        mapData.put("mapId", portMap.getMapId());
+    /**
+     * 解析节点数组
+     */
+    private List<Node> parseNodes(JsonNode nodesArray) {
+        List<Node> nodes = new ArrayList<>();
 
-        // 节点数据
-        List<Map<String, Object>> nodesData = new ArrayList<>();
-        for (map.Node node : portMap.getAllNodes()) {
-            Map<String, Object> nodeData = new HashMap<>();
-            nodeData.put("id", node.getId());
-            nodeData.put("type", node.getType().name());
-            nodeData.put("x", node.getX());
-            nodeData.put("y", node.getY());
-            nodeData.put("name", node.getName());
-            nodesData.add(nodeData);
+        if (nodesArray != null && nodesArray.isArray()) {
+            for (JsonNode nodeObj : nodesArray) {
+                String id = nodeObj.get("id").asText();
+                String typeStr = nodeObj.get("type").asText();
+                double x = nodeObj.get("x").asDouble();
+                double y = nodeObj.get("y").asDouble();
+                String name = nodeObj.has("name") ? nodeObj.get("name").asText() : id;
+
+                NodeType type = parseNodeType(typeStr);
+
+                nodes.add(new Node(id, type, x, y, name));
+            }
         }
-        mapData.put("nodes", nodesData);
 
-        // 路段数据
-        List<Map<String, Object>> segmentsData = new ArrayList<>();
-        for (map.Segment segment : portMap.getAllSegments()) {
-            Map<String, Object> segmentData = new HashMap<>();
-            segmentData.put("id", segment.getId());
-            segmentData.put("from", segment.getFromNodeId());
-            segmentData.put("to", segment.getToNodeId());
-            segmentData.put("length", segment.getLength());
-            segmentData.put("maxSpeed", segment.getMaxSpeed());
-            segmentData.put("isOneWay", segment.isOneWay());
-            segmentsData.add(segmentData);
-        }
-        mapData.put("segments", segmentsData);
-
-        objectMapper.writerWithDefaultPrettyPrinter()
-                .writeValue(new File(filePath), mapData);
+        return nodes;
     }
 
-    public boolean validateMapFile(String filePath) {
+    /**
+     * 解析节点类型字符串
+     */
+    private NodeType parseNodeType(String typeStr) {
         try {
-            PortMap map = loadFromFile(filePath);
-            System.out.println("地图验证成功: " + map);
-            return true;
-        } catch (Exception e) {
-            System.err.println("地图验证失败: " + e.getMessage());
-            return false;
+            return NodeType.valueOf(typeStr);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("未知的节点类型: " + typeStr);
+        }
+    }
+
+    /**
+     * 解析路段数组
+     */
+    private List<Segment> parseSegments(JsonNode segmentsArray) {
+        List<Segment> segments = new ArrayList<>();
+
+        if (segmentsArray != null && segmentsArray.isArray()) {
+            for (JsonNode segmentObj : segmentsArray) {
+                String id = segmentObj.get("id").asText();
+                String from = segmentObj.get("from").asText();
+                String to = segmentObj.get("to").asText();
+                double length = segmentObj.get("length").asDouble();
+                double maxSpeed = segmentObj.has("maxSpeed") ? segmentObj.get("maxSpeed").asDouble() : 5.0;
+                boolean isOneWay = segmentObj.has("isOneWay") && segmentObj.get("isOneWay").asBoolean(false);
+
+                segments.add(new Segment(id, from, to, length, maxSpeed, isOneWay));
+            }
+        }
+
+        return segments;
+    }
+
+    /**
+     * 验证地图完整性
+     */
+    private void validateMap(PortMap portMap) {
+        // 检查所有路段引用的节点是否存在
+        for (map.Segment segment : portMap.getAllSegments()) {
+            if (portMap.getNode(segment.getFromNodeId()) == null) {
+                throw new IllegalArgumentException("路段 " + segment.getId() +
+                        " 引用的起点节点不存在: " + segment.getFromNodeId());
+            }
+            if (portMap.getNode(segment.getToNodeId()) == null) {
+                throw new IllegalArgumentException("路段 " + segment.getId() +
+                        " 引用的终点节点不存在: " + segment.getToNodeId());
+            }
         }
     }
 }

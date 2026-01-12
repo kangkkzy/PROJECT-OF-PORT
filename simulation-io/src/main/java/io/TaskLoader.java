@@ -1,3 +1,5 @@
+package io;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import Instruction.Instruction;
@@ -75,8 +77,10 @@ public class TaskLoader {
             throw new IllegalArgumentException("目标节点不存在: " + destinationNodeId);
         }
 
-        // 创建任务
-        Instruction task = new Instruction(taskId, type, origin, destination);
+        // --- 核心修改点 ---
+        // 错误代码: new Instruction(taskId, type, origin, destination);
+        // 修正代码: 传入 String 类型的 ID
+        Instruction task = new Instruction(taskId, type, origin.getId(), destination.getId());
 
         // 设置可选字段
         if (taskObj.has("containerId")) {

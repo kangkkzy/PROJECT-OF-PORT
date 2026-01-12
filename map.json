@@ -1,0 +1,149 @@
+{
+  "mapId": "test_port",
+  "nodes": [
+    {
+      "id": "QUAY_01",
+      "type": "QUAY",
+      "x": 0.0,
+      "y": 0.0,
+      "name": "1号泊位"
+    },
+    {
+      "id": "QUAY_02",
+      "type": "QUAY",
+      "x": 0.0,
+      "y": 50.0,
+      "name": "2号泊位"
+    },
+    {
+      "id": "BAY_A01",
+      "type": "BAY",
+      "x": 100.0,
+      "y": 0.0,
+      "name": "A区1贝"
+    },
+    {
+      "id": "BAY_A02",
+      "type": "BAY",
+      "x": 100.0,
+      "y": 20.0,
+      "name": "A区2贝"
+    },
+    {
+      "id": "BAY_B01",
+      "type": "BAY",
+      "x": 150.0,
+      "y": 0.0,
+      "name": "B区1贝"
+    },
+    {
+      "id": "BAY_B02",
+      "type": "BAY",
+      "x": 150.0,
+      "y": 20.0,
+      "name": "B区2贝"
+    },
+    {
+      "id": "PARK_01",
+      "type": "PARKING",
+      "x": 50.0,
+      "y": 50.0,
+      "name": "1号停车区"
+    },
+    {
+      "id": "PARK_02",
+      "type": "PARKING",
+      "x": 50.0,
+      "y": 100.0,
+      "name": "2号停车区"
+    },
+    {
+      "id": "ROAD_01",
+      "type": "ROAD",
+      "x": 50.0,
+      "y": 0.0,
+      "name": "主干道1"
+    },
+    {
+      "id": "ROAD_02",
+      "type": "ROAD",
+      "x": 50.0,
+      "y": 20.0,
+      "name": "主干道2"
+    }
+  ],
+  "segments": [
+    {
+      "id": "SEG_01",
+      "from": "QUAY_01",
+      "to": "ROAD_01",
+      "length": 50.0,
+      "maxSpeed": 5.0,
+      "isOneWay": false
+    },
+    {
+      "id": "SEG_02",
+      "from": "QUAY_02",
+      "to": "ROAD_02",
+      "length": 50.0,
+      "maxSpeed": 5.0,
+      "isOneWay": false
+    },
+    {
+      "id": "SEG_03",
+      "from": "ROAD_01",
+      "to": "BAY_A01",
+      "length": 50.0,
+      "maxSpeed": 4.0,
+      "isOneWay": false
+    },
+    {
+      "id": "SEG_04",
+      "from": "ROAD_01",
+      "to": "BAY_A02",
+      "length": 50.0,
+      "maxSpeed": 4.0,
+      "isOneWay": false
+    },
+    {
+      "id": "SEG_05",
+      "from": "ROAD_02",
+      "to": "BAY_B01",
+      "length": 50.0,
+      "maxSpeed": 4.0,
+      "isOneWay": false
+    },
+    {
+      "id": "SEG_06",
+      "from": "ROAD_02",
+      "to": "BAY_B02",
+      "length": 50.0,
+      "maxSpeed": 4.0,
+      "isOneWay": false
+    },
+    {
+      "id": "SEG_07",
+      "from": "ROAD_01",
+      "to": "PARK_01",
+      "length": 50.0,
+      "maxSpeed": 5.0,
+      "isOneWay": false
+    },
+    {
+      "id": "SEG_08",
+      "from": "ROAD_02",
+      "to": "PARK_02",
+      "length": 50.0,
+      "maxSpeed": 5.0,
+      "isOneWay": false
+    },
+    {
+      "id": "SEG_09",
+      "from": "ROAD_01",
+      "to": "ROAD_02",
+      "length": 20.0,
+      "maxSpeed": 3.0,
+      "isOneWay": false
+    }
+  ]
+}

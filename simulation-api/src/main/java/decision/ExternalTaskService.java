@@ -2,10 +2,12 @@ package decision;
 
 import entity.Entity;
 import Instruction.Instruction;
+import java.util.List;
 
 /**
  * 外部任务服务接口
  * 定义了仿真系统(Client)与任务决策系统(Server)的交互标准
+ * [修正] 增加了路径规划和冲突解决接口
  */
 public interface ExternalTaskService {
 
@@ -26,4 +28,21 @@ public interface ExternalTaskService {
      * 提交初始任务 (用于本地测试或初始化)
      */
     void submitTask(Instruction instruction);
+
+    /**
+     * [新增] 外部路径规划
+     * @param origin 起点节点ID
+     * @param destination 终点节点ID
+     * @return 路径节点ID列表
+     */
+    List<String> findPath(String origin, String destination);
+
+    /**
+     * [新增] 解决物理冲突
+     * 当仿真引擎检测到物理冲突（如路径被占用）时调用
+     * @param entity 发生冲突的实体
+     * @param currentInstruction 当前正在尝试执行的指令
+     * @return 解决冲突的新指令（如 WAIT 指令或重新规划路径后的 MOVE 指令）
+     */
+    Instruction resolveCollision(Entity entity, Instruction currentInstruction);
 }

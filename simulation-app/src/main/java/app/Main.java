@@ -11,16 +11,15 @@ import io.ConfigLoader;
 import io.ConfigLoader.SimulationConfig;
 import core.SimulationEngine;
 import decision.ExternalTaskService;
-import decision.LocalDecisionEngine; // 引入本地实现
+import decision.LocalDecisionEngine;
 
 import java.util.*;
 
 public class Main {
     public static void main(String[] args) {
         try {
-            System.out.println("启动港口仿真系统 (接口分离版)...");
+            System.out.println("启动港口仿真系统 (修正版)...");
 
-            // 1-5. 加载配置、地图、实体、任务 (保持不变)
             String configFile = getConfigFilePath(args);
             ConfigLoader configLoader = new ConfigLoader();
             SimulationConfig simConfig = configLoader.loadConfig(configFile);
@@ -35,21 +34,17 @@ public class Main {
             TaskLoader taskLoader = new TaskLoader();
             List<Instruction> tasks = taskLoader.loadFromFile(simConfig.taskFile, nodeMap);
 
-            // 6. 配置引擎
             SimulationEngine.SimulationConfig engineConfig = new SimulationEngine.SimulationConfig();
             engineConfig.setSimulationDuration(simConfig.endTime);
             engineConfig.setMaxEvents(simConfig.maxEvents);
             engineConfig.setTimeStep(simConfig.timeStep);
 
-            // === 关键修改 ===
-            // 实例化任务决策服务。
-            // 这里我们使用 LocalDecisionEngine。如果你将来写好了 RemoteDecisionAdapter，改这里即可。
-            ExternalTaskService taskService = new LocalDecisionEngine();
+            // === 修正 ===
+            // 实例化 LocalDecisionEngine 时传入 portMap，以便其提供路径规划服务
+            ExternalTaskService taskService = new LocalDecisionEngine(portMap);
 
-            // 将 taskService 传入 Engine
             SimulationEngine engine = new SimulationEngine(portMap, engineConfig, taskService);
 
-            // 7. 注册数据
             for (Entity entity : entities) {
                 engine.addEntity(entity);
             }
@@ -57,7 +52,6 @@ public class Main {
                 engine.addInstruction(task);
             }
 
-            // 8. 运行
             engine.start();
             engine.generateReport();
 

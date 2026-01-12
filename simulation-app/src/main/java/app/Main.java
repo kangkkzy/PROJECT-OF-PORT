@@ -1,4 +1,4 @@
-package app; // 必须与文件夹名为 app 对应
+package app;
 
 import entity.Entity;
 import Instruction.Instruction;
@@ -9,41 +9,31 @@ import io.EntityLoader;
 import io.TaskLoader;
 import io.ConfigLoader;
 import io.ConfigLoader.SimulationConfig;
-import core.SimulationEngine; // 必须引用核心包
+import core.SimulationEngine;
+import decision.ExternalTaskService;
+import decision.LocalDecisionEngine; // 引入本地实现
 
 import java.util.*;
 
 public class Main {
     public static void main(String[] args) {
         try {
-            System.out.println("启动港口仿真系统...");
+            System.out.println("启动港口仿真系统 (接口分离版)...");
 
-            // 1. 加载配置文件
+            // 1-5. 加载配置、地图、实体、任务 (保持不变)
             String configFile = getConfigFilePath(args);
             ConfigLoader configLoader = new ConfigLoader();
             SimulationConfig simConfig = configLoader.loadConfig(configFile);
-            System.out.println("加载配置文件: " + configFile);
 
-            // 2. 加载地图
-            System.out.println("加载地图文件: " + simConfig.mapFile);
             JsonMapLoader mapLoader = new JsonMapLoader();
             PortMap portMap = mapLoader.loadFromFile(simConfig.mapFile);
-            System.out.println("地图加载成功: ID=" + portMap.getMapId() + ", 节点数=" + portMap.getNodeCount());
-
-            // 3. 辅助节点映射
             Map<String, Node> nodeMap = createNodeMap(portMap);
 
-            // 4. 加载实体
-            System.out.println("加载实体文件: " + simConfig.entityFile);
             EntityLoader entityLoader = new EntityLoader();
             List<Entity> entities = entityLoader.loadFromFile(simConfig.entityFile);
-            System.out.println("实体加载成功: 数量=" + entities.size());
 
-            // 5. 加载任务
-            System.out.println("加载任务文件: " + simConfig.taskFile);
             TaskLoader taskLoader = new TaskLoader();
             List<Instruction> tasks = taskLoader.loadFromFile(simConfig.taskFile, nodeMap);
-            System.out.println("任务加载成功: 数量=" + tasks.size());
 
             // 6. 配置引擎
             SimulationEngine.SimulationConfig engineConfig = new SimulationEngine.SimulationConfig();
@@ -51,7 +41,13 @@ public class Main {
             engineConfig.setMaxEvents(simConfig.maxEvents);
             engineConfig.setTimeStep(simConfig.timeStep);
 
-            SimulationEngine engine = new SimulationEngine(portMap, engineConfig);
+            // === 关键修改 ===
+            // 实例化任务决策服务。
+            // 这里我们使用 LocalDecisionEngine。如果你将来写好了 RemoteDecisionAdapter，改这里即可。
+            ExternalTaskService taskService = new LocalDecisionEngine();
+
+            // 将 taskService 传入 Engine
+            SimulationEngine engine = new SimulationEngine(portMap, engineConfig, taskService);
 
             // 7. 注册数据
             for (Entity entity : entities) {
@@ -62,10 +58,7 @@ public class Main {
             }
 
             // 8. 运行
-            System.out.println("\n=== 开始仿真运行 ===");
             engine.start();
-
-            // 9. 报告
             engine.generateReport();
 
         } catch (Exception e) {

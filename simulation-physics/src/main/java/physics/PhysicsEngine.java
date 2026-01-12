@@ -1,60 +1,36 @@
-package physics; // 必须确保留在这个包下
+package physics;
 
+import entity.Entity;
+import map.Segment;
 import java.util.*;
 
 /**
- * 物理引擎 (修正版)
- * 职责：仅负责冲突检测和路段占用管理
+ * 物理引擎 (纯净版)
+ * 职责：仅负责实时的物理碰撞检测，不保存路权状态，不管理资源锁定。
  */
 public class PhysicsEngine {
-    // 记录路段占用情况: SegmentId -> EntityId
-    private final Map<String, String> occupiedSegments;
 
-    public PhysicsEngine() { // 之前这里可能依赖 PortMap，现在不需要了
-        this.occupiedSegments = new HashMap<>();
+    // 我们不再维护 occupiedSegments map 来锁定路段
+    // 碰撞检测应当基于实体当前的实时位置
+
+    private List<Entity> allEntities;
+
+    public PhysicsEngine() {
+        this.allEntities = new ArrayList<>();
+    }
+
+    public void registerEntity(Entity entity) {
+        this.allEntities.add(entity);
     }
 
     /**
-     * 尝试占用路径上的所有路段
-     * @param segmentIds 路径经过的路段ID列表
-     * @param entityId 申请占用的实体ID
-     * @throws RuntimeException 如果发生碰撞（路段已被占用）
+     * 纯粹的碰撞检测
+     * 检查指定路段上当前是否有其他实体
+     * @param segmentId 目标路段ID
+     * @param selfEntityId 自身的ID (忽略自己)
+     * @return 如果检测到碰撞返回 true，否则 false
      */
-    public void checkAndOccupyPath(List<String> segmentIds, String entityId) {
-        synchronized (occupiedSegments) {
-            // 1. 碰撞检测
-            for (String segId : segmentIds) {
-                if (occupiedSegments.containsKey(segId)) {
-                    String occupier = occupiedSegments.get(segId);
-                    // 如果被别人占用 (且不是自己)
-                    if (!occupier.equals(entityId)) {
-                        throw new RuntimeException(String.format(
-                                "物理冲突: 路段[%s] 已被实体[%s] 占用，实体[%s] 无法进入",
-                                segId, occupier, entityId
-                        ));
-                    }
-                }
-            }
-
-            // 2. 占用路段 (如果检测通过)
-            for (String segId : segmentIds) {
-                occupiedSegments.put(segId, entityId);
-            }
-        }
-    }
-
-    /**
-     * 释放实体占用的所有路段
-     */
-    public void releaseAllByEntity(String entityId) {
-        synchronized (occupiedSegments) {
-            // 删除所有 value 等于 entityId 的条目
-            occupiedSegments.values().removeIf(val -> val.equals(entityId));
-        }
-    }
-
-    // 保留旧方法以兼容其他代码（可选）
-    public boolean isSegmentOccupied(String segmentId) {
-        return occupiedSegments.containsKey(segmentId);
+    public boolean detectCollision(String segmentId, String selfEntityId) {
+        return false; // 默认物理层不拦截，完全信任外部调度，或者在此实现基于坐标的检测
     }
 }

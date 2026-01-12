@@ -5,44 +5,38 @@ import Instruction.Instruction;
 import java.util.List;
 
 /**
- * 外部任务服务接口
- * 定义了仿真系统(Client)与任务决策系统(Server)的交互标准
- * [修正] 增加了路径规划和冲突解决接口
+ * 外部任务服务接口 (修正版)
+ * 这是一个纯粹的外部交互接口，所有“大脑”的工作都在这里定义
  */
 public interface ExternalTaskService {
 
     /**
      * 上报任务完成
-     * 当设备完成当前指令时调用
      */
     void reportTaskCompletion(String instructionId, String entityId);
 
     /**
+     * 上报物理冲突
+     * 当物理引擎检测到不可避免的碰撞时调用
+     */
+    void reportCollision(String entityId, String segmentId);
+
+    /**
      * 请求新任务
-     * 当设备空闲时调用，索取下一个指令
-     * @return 下一条指令，如果没有任务则返回 null
      */
     Instruction askForNewTask(Entity entity);
 
     /**
-     * 提交初始任务 (用于本地测试或初始化)
+     * 提交任务
      */
     void submitTask(Instruction instruction);
 
     /**
-     * [新增] 外部路径规划
-     * @param origin 起点节点ID
-     * @param destination 终点节点ID
-     * @return 路径节点ID列表
+     * [关键修改] 获取移动路径
+     * 仿真器不自己寻路，而是向外部询问：从A到B应该走哪些路段？
+     * @param originId 起点ID
+     * @param destinationId 终点ID
+     * @return 路段ID列表 (Segment IDs)
      */
-    List<String> findPath(String origin, String destination);
-
-    /**
-     * [新增] 解决物理冲突
-     * 当仿真引擎检测到物理冲突（如路径被占用）时调用
-     * @param entity 发生冲突的实体
-     * @param currentInstruction 当前正在尝试执行的指令
-     * @return 解决冲突的新指令（如 WAIT 指令或重新规划路径后的 MOVE 指令）
-     */
-    Instruction resolveCollision(Entity entity, Instruction currentInstruction);
+    List<String> getRoute(String originId, String destinationId);
 }

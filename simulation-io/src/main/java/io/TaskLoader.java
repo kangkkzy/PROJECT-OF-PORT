@@ -8,6 +8,7 @@ import map.Node;
 import java.io.File;
 import java.time.Instant;
 import java.util.*;
+
 // 加载json任务
 public class TaskLoader {
     private final ObjectMapper objectMapper;
@@ -23,6 +24,8 @@ public class TaskLoader {
     private static final String KEY_TARGET_IT = "targetIT";
     private static final String KEY_PRIORITY = "priority";
     private static final String KEY_GENERATE_TIME = "generateTime";
+    private static final String KEY_PARAMETERS = "parameters";
+    private static final String KEY_EXPECTED_DURATION = "expectedDuration";
 
     public TaskLoader() {
         this.objectMapper = new ObjectMapper();
@@ -57,16 +60,13 @@ public class TaskLoader {
     }
 
     private Instruction parseTask(JsonNode taskObj, Map<String, Node> nodeMap) {
-        // 使用常量获取字段
         String taskId = taskObj.get(KEY_ID).asText();
         String typeStr = taskObj.get(KEY_TYPE).asText();
         String originNodeId = taskObj.get(KEY_ORIGIN).asText();
         String destinationNodeId = taskObj.get(KEY_DESTINATION).asText();
 
-        // 解析任务类型
         InstructionType type = parseInstructionType(typeStr);
 
-        // 验证节点存在性
         Node origin = nodeMap.get(originNodeId);
         if (origin == null) {
             throw new IllegalArgumentException("起始节点不存在: " + originNodeId);
@@ -79,7 +79,6 @@ public class TaskLoader {
 
         Instruction task = new Instruction(taskId, type, origin.getId(), destination.getId());
 
-        // 设置可选字段
         if (taskObj.has(KEY_CONTAINER_ID)) {
             task.setContainerId(taskObj.get(KEY_CONTAINER_ID).asText());
         }
@@ -109,7 +108,44 @@ public class TaskLoader {
             task.setGenerateTime(Instant.ofEpochMilli(generateTime));
         }
 
+        // 解析预期耗时
+        if (taskObj.has(KEY_EXPECTED_DURATION)) {
+            task.setExpectedDuration(taskObj.get(KEY_EXPECTED_DURATION).asLong());
+        }
+
+        // 解析通用参数
+        if (taskObj.has(KEY_PARAMETERS)) {
+            JsonNode paramsNode = taskObj.get(KEY_PARAMETERS);
+            Map<String, Object> parameters = parseParameters(paramsNode);
+            for (Map.Entry<String, Object> entry : parameters.entrySet()) {
+                task.setExtraParameter(entry.getKey(), entry.getValue());
+            }
+        }
+
         return task;
+    }
+
+    private Map<String, Object> parseParameters(JsonNode paramsNode) {
+        Map<String, Object> parameters = new HashMap<>();
+        if (paramsNode != null && paramsNode.isObject()) {
+            paramsNode.fields().forEachRemaining(entry -> {
+                JsonNode value = entry.getValue();
+                if (value.isNumber()) {
+                    if (value.isInt()) {
+                        parameters.put(entry.getKey(), value.asInt());
+                    } else if (value.isDouble()) {
+                        parameters.put(entry.getKey(), value.asDouble());
+                    } else if (value.isLong()) {
+                        parameters.put(entry.getKey(), value.asLong());
+                    }
+                } else if (value.isBoolean()) {
+                    parameters.put(entry.getKey(), value.asBoolean());
+                } else if (value.isTextual()) {
+                    parameters.put(entry.getKey(), value.asText());
+                }
+            });
+        }
+        return parameters;
     }
 
     private InstructionType parseInstructionType(String typeStr) {

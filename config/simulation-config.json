@@ -14,7 +14,7 @@
     "entityFile": "data/entities.json"
   },
   "strategies": {
-    "routePlannerClass": "algo.BfsRoutePlanner",
-    "taskDispatcherClass": "algo.FifoTaskDispatcher"
+    "routePlannerClass": "plugins.BfsRoutePlanner",
+    "taskDispatcherClass": "plugins.FifoTaskDispatcher"
   }
 }

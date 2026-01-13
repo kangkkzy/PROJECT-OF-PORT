@@ -4,14 +4,15 @@ import entity.Entity;
 import map.PortMap;
 import map.Segment;
 import java.util.List;
-
+// 移动时间计算
 public class TimeEstimationModule {
     private PortMap portMap;
 
     public TimeEstimationModule(PortMap portMap) {
         this.portMap = portMap;
     }
-// 根据物理情况 计算路径所消耗的时间
+
+    // 根据物理情况 计算路径所消耗的时间
     public long estimateMovementTime(Entity entity, List<String> pathIds) {
         if (pathIds == null || pathIds.isEmpty()) {
             return 0;
@@ -28,11 +29,16 @@ public class TimeEstimationModule {
         return calculateMovementTimeWithAcceleration(entity, totalDistance);
     }
 
-    // 物理公式计算
+    // 物理公式计算：考虑加速、匀速、减速过程
     private long calculateMovementTimeWithAcceleration(Entity entity, double distance) {
         double maxSpeed = entity.getMaxSpeed();
         double acceleration = entity.getAcceleration();
         double deceleration = entity.getDeceleration();
+
+        // 避免除零错误
+        if (acceleration <= 0 || deceleration <= 0 || maxSpeed <= 0) {
+            return (long) (distance / (maxSpeed > 0 ? maxSpeed : 1.0) * 1000);
+        }
 
         double accelerationDistance = (maxSpeed * maxSpeed) / (2 * acceleration);
         double decelerationDistance = (maxSpeed * maxSpeed) / (2 * deceleration);
@@ -41,6 +47,7 @@ public class TimeEstimationModule {
         double totalTime;
 
         if (distance <= totalAccDecDistance) {
+            // 距离太短 无法达到最大速度
             double achievableSpeed = Math.sqrt(
                     (2 * acceleration * deceleration * distance) /
                             (acceleration + deceleration)
@@ -49,6 +56,7 @@ public class TimeEstimationModule {
             double decTime = achievableSpeed / deceleration;
             totalTime = accTime + decTime;
         } else {
+            // 梯形速度曲线（加速 -> 匀速 -> 减速）
             double accTime = maxSpeed / acceleration;
             double decTime = maxSpeed / deceleration;
             double cruiseDistance = distance - totalAccDecDistance;
@@ -57,15 +65,5 @@ public class TimeEstimationModule {
         }
 
         return (long)(totalTime * 1000);
-    }
-
-    public long estimateExecutionTime(Entity entity, String operationType) {
-        // 作业时间估算
-        switch (entity.getType()) {
-            case QC: return 45000;
-            case YC: return 50000;
-            case IT: return 15000;
-            default: return 5000;
-        }
     }
 }

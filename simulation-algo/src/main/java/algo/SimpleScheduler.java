@@ -49,10 +49,13 @@ public class SimpleScheduler {
     public SimEvent getNextEvent() { return eventQueue.poll(); }
 
     public void handleExecutionComplete(long currentTime, String entityId, String instructionId) {
+        // 【新增逻辑】: 任务完成或到达，必须立刻释放之前占用的路段资源！
+        physicsEngine.unlockResources(entityId);
+
         Entity entity = entities.get(entityId);
         if (entity == null) return;
 
-        // 1. 上报完成
+        //  上报完成
         if (instructionId != null) {
             Instruction inst = instructions.get(instructionId);
             if (inst != null) {
@@ -63,7 +66,7 @@ public class SimpleScheduler {
         entity.setCurrentInstructionId(null);
         entity.setStatus(EntityStatus.IDLE);
 
-        // 2. 索取新任务
+        // 索取新任务
         Instruction nextInst = taskService.askForNewTask(entity);
         if (nextInst != null) {
             executeInstruction(currentTime, entity, nextInst);
@@ -90,14 +93,15 @@ public class SimpleScheduler {
         String from = entity.getCurrentPosition();
         String to = instruction.getDestination();
 
-        // 1. 获取路径 (外部算法)
+        //  获取路径 (外部
         List<String> routeSegments = taskService.getRoute(from, to);
 
-        // 2. 碰撞检测 (物理引擎)
+        //   碰撞检测 (内部
         boolean hasCollision = false;
         String collidedSegment = null;
         if (routeSegments != null) {
             for (String segId : routeSegments) {
+                // 现在这里的 detectCollision 会真正去查表了
                 if (physicsEngine.detectCollision(segId, entity.getId())) {
                     hasCollision = true;
                     collidedSegment = segId;
@@ -106,9 +110,8 @@ public class SimpleScheduler {
             }
         }
 
-        // 3. 冲突处理 (外部算法)
+        //  冲突处理 (外部
         if (hasCollision) {
-            // [无硬编码] 询问外部算法如何解决
             Instruction recoveryInstruction = taskService.askForCollisionSolution(entity.getId(), collidedSegment);
             if (recoveryInstruction != null) {
                 executeInstruction(currentTime, entity, recoveryInstruction);
@@ -120,6 +123,8 @@ public class SimpleScheduler {
         }
 
         // 4. 执行移动
+        physicsEngine.lockSegments(entity.getId(), routeSegments);
+
         long duration = timeModule.estimateMovementTime(entity, routeSegments);
         entity.setStatus(EntityStatus.MOVING);
         EventType type = getArrivalType(entity);
@@ -127,7 +132,7 @@ public class SimpleScheduler {
     }
 
     private void handleOperationInstruction(long currentTime, Entity entity, Instruction instruction) {
-        // [无硬编码] 直接读取指令中的时间
+        // 作业指令不锁定
         long duration = instruction.getExpectedDuration();
         if (duration <= 0) System.err.println("警告: 指令耗时为0 " + instruction.getInstructionId());
 
@@ -137,9 +142,8 @@ public class SimpleScheduler {
     }
 
     private void handleWaitInstruction(long currentTime, Entity entity, Instruction instruction) {
-        // [无硬编码] 直接读取指令中的时间
         long duration = instruction.getExpectedDuration();
-
+// 等待不锁
         entity.setStatus(EntityStatus.WAITING);
         EventType type = getCompleteType(entity);
         eventQueue.add(new SimEvent(currentTime + duration, type, entity.getId(), instruction.getInstructionId()));

@@ -4,25 +4,41 @@ public class QC extends Entity {
     private double maxLiftWeight;
     private double spreaderWidth;
 
-    public QC(String id, String initialPosition, double maxLiftWeight, double spreaderWidth) {
+    //  物理属性
+    private double maxSpeed;
+    private double acceleration;
+    private double deceleration;
+
+    // 基础吊运时间 移动时间
+    private double baseLiftTime;
+    private double timePerMeter;
+
+    public QC(String id, String initialPosition, double maxLiftWeight, double spreaderWidth,
+              double maxSpeed, double acceleration, double deceleration,
+              double baseLiftTime, double timePerMeter) {
         super(id, EntityType.QC, initialPosition);
         this.maxLiftWeight = maxLiftWeight;
         this.spreaderWidth = spreaderWidth;
+        this.maxSpeed = maxSpeed;
+        this.acceleration = acceleration;
+        this.deceleration = deceleration;
+        this.baseLiftTime = baseLiftTime;
+        this.timePerMeter = timePerMeter;
     }
 
     @Override
     public double getMaxSpeed() {
-        return 1.5; // 桥吊移动速度较慢，1.5 m/s
+        return maxSpeed;
     }
 
     @Override
     public double getAcceleration() {
-        return 0.3; // m/s²
+        return acceleration;
     }
 
     @Override
     public double getDeceleration() {
-        return 0.4; // m/s²
+        return deceleration;
     }
 
     public double getMaxLiftWeight() {
@@ -33,8 +49,8 @@ public class QC extends Entity {
         return spreaderWidth;
     }
 
+    // 使用配置参数计算
     public double calculateLiftTime(double height) {
-        // 吊箱时间 = 基础时间 + 高度相关时间
-        return 30.0 + (height / 1.5); // 30秒基础时间 + 高度/1.5
+        return baseLiftTime + (height * timePerMeter);
     }
 }

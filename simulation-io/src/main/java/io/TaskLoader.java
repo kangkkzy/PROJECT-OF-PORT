@@ -8,21 +8,26 @@ import map.Node;
 import java.io.File;
 import java.time.Instant;
 import java.util.*;
-
-/**
- * 纯粹的JSON任务加载器
- * 只负责从JSON文件加载任务配置
- */
+// 加载json任务
 public class TaskLoader {
     private final ObjectMapper objectMapper;
+    private static final String KEY_ID = "id";
+    private static final String KEY_TYPE = "type";
+    private static final String KEY_ORIGIN = "origin";
+    private static final String KEY_DESTINATION = "destination";
+
+    private static final String KEY_CONTAINER_ID = "containerId";
+    private static final String KEY_CONTAINER_WEIGHT = "containerWeight";
+    private static final String KEY_TARGET_QC = "targetQC";
+    private static final String KEY_TARGET_YC = "targetYC";
+    private static final String KEY_TARGET_IT = "targetIT";
+    private static final String KEY_PRIORITY = "priority";
+    private static final String KEY_GENERATE_TIME = "generateTime";
 
     public TaskLoader() {
         this.objectMapper = new ObjectMapper();
     }
 
-    /**
-     * 从JSON文件加载任务
-     */
     public List<Instruction> loadFromFile(String filePath, Map<String, Node> nodeMap) throws Exception {
         File file = new File(filePath);
         if (!file.exists()) {
@@ -33,9 +38,6 @@ public class TaskLoader {
         return parseTasks(root, nodeMap);
     }
 
-    /**
-     * 解析任务数组
-     */
     private List<Instruction> parseTasks(JsonNode root, Map<String, Node> nodeMap) {
         List<Instruction> tasks = new ArrayList<>();
 
@@ -54,14 +56,12 @@ public class TaskLoader {
         return tasks;
     }
 
-    /**
-     * 解析单个任务
-     */
     private Instruction parseTask(JsonNode taskObj, Map<String, Node> nodeMap) {
-        String taskId = taskObj.get("id").asText();
-        String typeStr = taskObj.get("type").asText();
-        String originNodeId = taskObj.get("origin").asText();
-        String destinationNodeId = taskObj.get("destination").asText();
+        // 使用常量获取字段
+        String taskId = taskObj.get(KEY_ID).asText();
+        String typeStr = taskObj.get(KEY_TYPE).asText();
+        String originNodeId = taskObj.get(KEY_ORIGIN).asText();
+        String destinationNodeId = taskObj.get(KEY_DESTINATION).asText();
 
         // 解析任务类型
         InstructionType type = parseInstructionType(typeStr);
@@ -77,47 +77,41 @@ public class TaskLoader {
             throw new IllegalArgumentException("目标节点不存在: " + destinationNodeId);
         }
 
-        // --- 核心修改点 ---
-        // 错误代码: new Instruction(taskId, type, origin, destination);
-        // 修正代码: 传入 String 类型的 ID
         Instruction task = new Instruction(taskId, type, origin.getId(), destination.getId());
 
         // 设置可选字段
-        if (taskObj.has("containerId")) {
-            task.setContainerId(taskObj.get("containerId").asText());
+        if (taskObj.has(KEY_CONTAINER_ID)) {
+            task.setContainerId(taskObj.get(KEY_CONTAINER_ID).asText());
         }
 
-        if (taskObj.has("containerWeight")) {
-            task.setContainerWeight(taskObj.get("containerWeight").asDouble());
+        if (taskObj.has(KEY_CONTAINER_WEIGHT)) {
+            task.setContainerWeight(taskObj.get(KEY_CONTAINER_WEIGHT).asDouble());
         }
 
-        if (taskObj.has("targetQC")) {
-            task.setTargetQC(taskObj.get("targetQC").asText());
+        if (taskObj.has(KEY_TARGET_QC)) {
+            task.setTargetQC(taskObj.get(KEY_TARGET_QC).asText());
         }
 
-        if (taskObj.has("targetYC")) {
-            task.setTargetYC(taskObj.get("targetYC").asText());
+        if (taskObj.has(KEY_TARGET_YC)) {
+            task.setTargetYC(taskObj.get(KEY_TARGET_YC).asText());
         }
 
-        if (taskObj.has("targetIT")) {
-            task.setTargetIT(taskObj.get("targetIT").asText());
+        if (taskObj.has(KEY_TARGET_IT)) {
+            task.setTargetIT(taskObj.get(KEY_TARGET_IT).asText());
         }
 
-        if (taskObj.has("priority")) {
-            task.setPriority(taskObj.get("priority").asInt());
+        if (taskObj.has(KEY_PRIORITY)) {
+            task.setPriority(taskObj.get(KEY_PRIORITY).asInt());
         }
 
-        if (taskObj.has("generateTime")) {
-            long generateTime = taskObj.get("generateTime").asLong();
+        if (taskObj.has(KEY_GENERATE_TIME)) {
+            long generateTime = taskObj.get(KEY_GENERATE_TIME).asLong();
             task.setGenerateTime(Instant.ofEpochMilli(generateTime));
         }
 
         return task;
     }
 
-    /**
-     * 解析任务类型
-     */
     private InstructionType parseInstructionType(String typeStr) {
         try {
             return InstructionType.valueOf(typeStr);

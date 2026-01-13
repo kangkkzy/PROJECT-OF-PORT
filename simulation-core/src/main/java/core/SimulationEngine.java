@@ -4,10 +4,8 @@ import entity.*;
 import event.*;
 import Instruction.*;
 import map.PortMap;
-import decision.ExternalTaskService;
-import time.TimeEstimationModule;
 import algo.SimpleScheduler;
-import physics.PhysicsEngine; // [新增] 引入物理引擎
+import physics.PhysicsEngine;
 import java.util.*;
 
 public class SimulationEngine {
@@ -17,16 +15,16 @@ public class SimulationEngine {
     private Map<String, Entity> entityMap;
     private PortMap portMap;
 
-    private ExternalTaskService taskService;
-    private TimeEstimationModule timeModule;
+    // 引擎只有核心调度器和物理引擎
     private SimpleScheduler scheduler;
-    private PhysicsEngine physicsEngine; // [新增] 持有物理引擎实例
+    private PhysicsEngine physicsEngine;
 
     private List<SimEvent> eventLog;
     private SimulationConfig config;
     private boolean isRunning;
 
-    public SimulationEngine(PortMap portMap, SimulationConfig config, ExternalTaskService taskService) {
+// 只负责运行
+    public SimulationEngine(PortMap portMap, SimulationConfig config, SimpleScheduler scheduler, PhysicsEngine physicsEngine) {
         this.currentTime = 0;
         this.eventQueue = new PriorityQueue<>();
         this.instructionMap = new HashMap<>();
@@ -35,17 +33,8 @@ public class SimulationEngine {
         this.config = config;
         this.eventLog = new ArrayList<>();
         this.isRunning = false;
-
-        this.taskService = taskService;
-
-        // [新增] 初始化物理引擎
-        this.physicsEngine = new PhysicsEngine();
-
-        // 初始化时间估算模块
-        this.timeModule = new TimeEstimationModule(portMap);
-
-        // [修正] 传递 4 个参数给 Scheduler (TaskService, TimeModule, PhysicsEngine, PortMap)
-        this.scheduler = new SimpleScheduler(taskService, timeModule, physicsEngine, portMap);
+        this.scheduler = scheduler;
+        this.physicsEngine = physicsEngine;
     }
 
     public void addEntity(Entity entity) {
@@ -63,7 +52,7 @@ public class SimulationEngine {
         String entityId = event.getEntityId();
         String instructionId = event.getInstructionId();
 
-        // 事件分发逻辑保持不变
+        // 事件分发逻辑 通过SimpleScheduler完成
         switch (type) {
             case QC_EXECUTION_COMPLETE:
                 scheduler.handleQCExecutionComplete(currentTime, entityId, instructionId);
@@ -106,7 +95,6 @@ public class SimulationEngine {
             SimEvent event = scheduler.getNextEvent();
 
             if (event == null) {
-                // 如果 Scheduler 队列空了，检查 Engine 自己的（初始化时可能用到）
                 event = this.eventQueue.poll();
             }
 
@@ -125,14 +113,13 @@ public class SimulationEngine {
         System.out.println("仿真结束!");
     }
 
-
+    // 从json中读取数据
     public static class SimulationConfig {
-        private String name; // 添加 name 字段以匹配 ConfigLoader
-        private long simulationDuration = 86400000;
-        private long timeStep = 1000;
-        private int maxEvents = 1000000;
+        private String name;
+        private long simulationDuration;
+        private long timeStep;
+        private int maxEvents;
 
-        // 确保这些字段都有 getter/setter
         public long getSimulationDuration() { return simulationDuration; }
         public void setSimulationDuration(long simulationDuration) { this.simulationDuration = simulationDuration; }
         public void setMaxEvents(int maxEvents) { this.maxEvents = maxEvents; }

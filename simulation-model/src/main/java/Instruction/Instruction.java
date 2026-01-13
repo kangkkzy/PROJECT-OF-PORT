@@ -14,7 +14,7 @@ public class Instruction {
     private String targetIT;     // 分配给的集卡
     private int priority;        // 优先级
     private String status;       // 状态：PENDING, ASSIGNED, IN_PROGRESS, COMPLETED
-    private Instant generateTime; // 新增：生成时间
+    private Instant generateTime; // 生成时间
 
     public Instruction(String instructionId, InstructionType type, String origin, String destination) {
         this.instructionId = instructionId;

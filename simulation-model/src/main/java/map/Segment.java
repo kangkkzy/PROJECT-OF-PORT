@@ -8,17 +8,12 @@ public class Segment {
     private double maxSpeed;
     private boolean isOneWay;
 
-    public Segment(String id, String fromNodeId, String toNodeId, double length) {
+    // 通过json提供所有的数据
+    public Segment(String id, String fromNodeId, String toNodeId, double length, double maxSpeed, boolean isOneWay) {
         this.id = id;
         this.fromNodeId = fromNodeId;
         this.toNodeId = toNodeId;
         this.length = length;
-        this.maxSpeed = 5.0; // 默认5 m/s
-        this.isOneWay = false;
-    }
-
-    public Segment(String id, String fromNodeId, String toNodeId, double length, double maxSpeed, boolean isOneWay) {
-        this(id, fromNodeId, toNodeId, length);
         this.maxSpeed = maxSpeed;
         this.isOneWay = isOneWay;
     }
@@ -72,9 +67,16 @@ public class Segment {
         isOneWay = oneWay;
     }
 
+    // 路段是否正确
     public boolean connects(String nodeId1, String nodeId2) {
-        return (fromNodeId.equals(nodeId1) && toNodeId.equals(nodeId2)) ||
-                (!isOneWay && fromNodeId.equals(nodeId2) && toNodeId.equals(nodeId1));
+        // 如果是单行道，必须方向匹配 (From -> To)
+        // 如果是双行道，方向可以互换
+        if (isOneWay) {
+            return fromNodeId.equals(nodeId1) && toNodeId.equals(nodeId2);
+        } else {
+            return (fromNodeId.equals(nodeId1) && toNodeId.equals(nodeId2)) ||
+                    (fromNodeId.equals(nodeId2) && toNodeId.equals(nodeId1));
+        }
     }
 
     @Override

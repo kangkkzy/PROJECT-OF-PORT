@@ -1,13 +1,9 @@
-package io; // 新增
+package io;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.io.File;
 
-/**
- * 纯粹的JSON配置加载器
- * 只负责从JSON文件加载仿真配置
- */
 public class ConfigLoader {
     private final ObjectMapper objectMapper;
 
@@ -15,9 +11,7 @@ public class ConfigLoader {
         this.objectMapper = new ObjectMapper();
     }
 
-    /**
-     * 从JSON文件加载配置
-     */
+    // 从json中加载配置
     public SimulationConfig loadConfig(String filePath) throws Exception {
         File file = new File(filePath);
         if (!file.exists()) {
@@ -28,54 +22,67 @@ public class ConfigLoader {
         return parseConfig(root);
     }
 
-    /**
-     * 解析配置JSON
-     */
+    // 解析配置json
     private SimulationConfig parseConfig(JsonNode root) {
         SimulationConfig config = new SimulationConfig();
 
-        // 基本配置
+        //  基本配置
         if (root.has("simulation")) {
             JsonNode simNode = root.get("simulation");
-            config.name = simNode.get("name").asText();
+            if (simNode.has("name")) config.name = simNode.get("name").asText();
         }
 
-        // 时间设置
+        //   时间设置
         if (root.has("timeSettings")) {
             JsonNode timeNode = root.get("timeSettings");
-            config.startTime = timeNode.get("startTime").asLong();
-            config.endTime = timeNode.get("endTime").asLong();
-            config.timeStep = timeNode.get("timeStep").asLong();
-            config.maxEvents = timeNode.get("maxEvents").asInt();
+            if (timeNode.has("startTime")) config.startTime = timeNode.get("startTime").asLong();
+            if (timeNode.has("endTime")) config.endTime = timeNode.get("endTime").asLong();
+            if (timeNode.has("timeStep")) config.timeStep = timeNode.get("timeStep").asLong();
+            if (timeNode.has("maxEvents")) config.maxEvents = timeNode.get("maxEvents").asInt();
         }
 
-        // 文件路径
+        //   文件路径
         if (root.has("paths")) {
             JsonNode pathsNode = root.get("paths");
-            config.mapFile = pathsNode.get("mapFile").asText();
-            config.taskFile = pathsNode.get("taskFile").asText();
-            config.entityFile = pathsNode.get("entityFile").asText();
+            if (pathsNode.has("mapFile")) config.mapFile = pathsNode.get("mapFile").asText();
+            if (pathsNode.has("taskFile")) config.taskFile = pathsNode.get("taskFile").asText();
+            if (pathsNode.has("entityFile")) config.entityFile = pathsNode.get("entityFile").asText();
+        }
+
+        //  读取 JSON 中的节点
+        if (root.has("strategies")) {
+            JsonNode stratNode = root.get("strategies");
+            if (stratNode.has("routePlannerClass"))
+                config.routePlannerClass = stratNode.get("routePlannerClass").asText();
+            if (stratNode.has("taskDispatcherClass"))
+                config.taskDispatcherClass = stratNode.get("taskDispatcherClass").asText();
+        }
+        else {
+            if (root.has("routePlannerClass")) config.routePlannerClass = root.get("routePlannerClass").asText();
+            if (root.has("taskDispatcherClass")) config.taskDispatcherClass = root.get("taskDispatcherClass").asText();
         }
 
         return config;
     }
 
-    /**
-     * 配置类
-     */
+    // 配置类
     public static class SimulationConfig {
         public String name;
         public long startTime = 0;
         public long endTime = 86400000;
         public long timeStep = 1000;
         public int maxEvents = 1000000;
+
         public String mapFile;
         public String taskFile;
         public String entityFile;
+        public String routePlannerClass;
+        public String taskDispatcherClass;
 
         @Override
         public String toString() {
-            return String.format("SimulationConfig[name=%s, duration=%dms]", name, endTime);
+            return String.format("SimulationConfig[name=%s, duration=%dms, router=%s]",
+                    name, endTime, routePlannerClass);
         }
     }
 }

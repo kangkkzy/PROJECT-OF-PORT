@@ -2,39 +2,49 @@ package entity;
 
 public class YC extends Entity {
     private double maxLiftWeight;
-    private double gantrySpeed;
 
-    public YC(String id, String initialPosition, double maxLiftWeight, double gantrySpeed) {
+    // 物理属性
+    private double maxSpeed;
+    private double acceleration;
+    private double deceleration;
+
+    // 基础作业时间 耗时
+    private double baseCycleTime;
+    private double timePerTier;
+
+    public YC(String id, String initialPosition, double maxLiftWeight,
+              double maxSpeed, double acceleration, double deceleration,
+              double baseCycleTime, double timePerTier) {
         super(id, EntityType.YC, initialPosition);
         this.maxLiftWeight = maxLiftWeight;
-        this.gantrySpeed = gantrySpeed;
+        this.maxSpeed = maxSpeed;
+        this.acceleration = acceleration;
+        this.deceleration = deceleration;
+        this.baseCycleTime = baseCycleTime;
+        this.timePerTier = timePerTier;
     }
 
     @Override
     public double getMaxSpeed() {
-        return gantrySpeed; // 龙门吊大车速度
+        return maxSpeed;
     }
 
     @Override
     public double getAcceleration() {
-        return 0.5; // m/s²
+        return acceleration;
     }
 
     @Override
     public double getDeceleration() {
-        return 0.6; // m/s²
+        return deceleration;
     }
 
     public double getMaxLiftWeight() {
         return maxLiftWeight;
     }
 
-    public double getGantrySpeed() {
-        return gantrySpeed;
-    }
-
+    //使用配置参数计算作业时间
     public double calculateCycleTime(int tier) {
-        // 龙门吊作业周期 = 基础时间 + 层数相关时间
-        return 45.0 + (tier * 2.0); // 45秒基础时间 + 每层2秒
+        return baseCycleTime + (tier * timePerTier);
     }
 }

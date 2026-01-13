@@ -17,7 +17,7 @@ public class SimpleScheduler {
     private ExternalTaskService taskService;
     private TimeEstimationModule timeModule;
     private PhysicsEngine physicsEngine;
-    private PortMap portMap; // 仅用于ID转换
+    private PortMap portMap;
 
     private Map<String, Entity> entities;
     private Map<String, Instruction> instructions;

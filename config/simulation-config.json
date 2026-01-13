@@ -1,16 +1,20 @@
 {
   "simulation": {
-    "name": "港口仿真测试"
+    "name": "Port Simulation 2026"
   },
   "timeSettings": {
     "startTime": 0,
     "endTime": 3600000,
     "timeStep": 1000,
-    "maxEvents": 10000
+    "maxEvents": 50000
   },
   "paths": {
-    "mapFile": "config/map.json",
-    "taskFile": "config/tasks.json",
-    "entityFile": "config/entities.json"
+    "mapFile": "data/map.json",
+    "taskFile": "data/tasks.json",
+    "entityFile": "data/entities.json"
+  },
+  "strategies": {
+    "routePlannerClass": "algo.BfsRoutePlanner",
+    "taskDispatcherClass": "algo.FifoTaskDispatcher"
   }
 }

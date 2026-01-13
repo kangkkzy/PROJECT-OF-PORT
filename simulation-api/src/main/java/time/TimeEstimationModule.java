@@ -11,14 +11,7 @@ public class TimeEstimationModule {
     public TimeEstimationModule(PortMap portMap) {
         this.portMap = portMap;
     }
-
-    /**
-     * 估算移动时间 (修正版)
-     * 不再进行路径查找，必须由外部提供路径信息
-     * @param entity 实体
-     * @param pathIds 路径的路段ID列表
-     * @return 估算的毫秒数
-     */
+// 根据物理情况 计算路径所消耗的时间
     public long estimateMovementTime(Entity entity, List<String> pathIds) {
         if (pathIds == null || pathIds.isEmpty()) {
             return 0;
@@ -35,7 +28,7 @@ public class TimeEstimationModule {
         return calculateMovementTimeWithAcceleration(entity, totalDistance);
     }
 
-    // 保留物理公式计算
+    // 物理公式计算
     private long calculateMovementTimeWithAcceleration(Entity entity, double distance) {
         double maxSpeed = entity.getMaxSpeed();
         double acceleration = entity.getAcceleration();
@@ -67,9 +60,9 @@ public class TimeEstimationModule {
     }
 
     public long estimateExecutionTime(Entity entity, String operationType) {
-        // 保持原有的作业时间估算逻辑
+        // 作业时间估算
         switch (entity.getType()) {
-            case QC: return 45000; // 简化示例
+            case QC: return 45000;
             case YC: return 50000;
             case IT: return 15000;
             default: return 5000;

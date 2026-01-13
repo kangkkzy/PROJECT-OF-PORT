@@ -6,8 +6,6 @@ public class PortMap {
     private String mapId;
     private Map<String, Node> nodes;
     private Map<String, Segment> segments;
-    // 移除了邻接表，因为路径查找是外部责任
-    // private Map<String, List<String>> adjacencyList;
 
     public PortMap(String mapId) {
         this.mapId = mapId;

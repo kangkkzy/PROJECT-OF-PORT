@@ -4,10 +4,7 @@ import decision.RoutePlanner;
 import map.PortMap;
 import map.Segment;
 import java.util.*;
-
-/**
- * BFS 路径规划器实现
- */
+// 外接算法
 public class BfsRoutePlanner implements RoutePlanner {
     private final PortMap portMap;
 
@@ -47,7 +44,6 @@ public class BfsRoutePlanner implements RoutePlanner {
 
         if (!found) return Collections.emptyList();
 
-        // 回溯重建路径
         List<String> routeSegmentIds = new ArrayList<>();
         String curr = destinationId;
         while (curr != null) {

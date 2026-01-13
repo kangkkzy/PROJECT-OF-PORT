@@ -4,25 +4,35 @@ public class IT extends Entity {
     private double maxLoadWeight;
     private double currentLoadWeight;
 
-    public IT(String id, String initialPosition, double maxLoadWeight) {
+    private double maxSpeed;
+    private double acceleration;
+    private double deceleration;
+
+    // 构造
+    public IT(String id, String initialPosition, double maxLoadWeight,
+              double maxSpeed, double acceleration, double deceleration) {
         super(id, EntityType.IT, initialPosition);
         this.maxLoadWeight = maxLoadWeight;
+        this.maxSpeed = maxSpeed;
+        this.acceleration = acceleration;
+        this.deceleration = deceleration;
         this.currentLoadWeight = 0.0;
     }
 
+    //  直接返回配置值
     @Override
     public double getMaxSpeed() {
-        return 6.0; // 集卡速度 6 m/s
+        return maxSpeed;
     }
 
     @Override
     public double getAcceleration() {
-        return 0.8; // m/s²
+        return acceleration;
     }
 
     @Override
     public double getDeceleration() {
-        return 1.2; // m/s²
+        return deceleration;
     }
 
     public double getMaxLoadWeight() {

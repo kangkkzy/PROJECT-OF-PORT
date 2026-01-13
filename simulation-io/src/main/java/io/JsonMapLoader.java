@@ -1,4 +1,4 @@
-package io; // 新增
+package io;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -9,10 +9,7 @@ import map.Segment;
 import java.io.File;
 import java.util.*;
 
-/**
- * 纯粹的JSON地图加载器
- * 只负责从JSON文件加载地图配置，没有任何硬编码
- */
+//加载json地图
 public class JsonMapLoader {
     private final ObjectMapper objectMapper;
 
@@ -20,41 +17,37 @@ public class JsonMapLoader {
         this.objectMapper = new ObjectMapper();
     }
 
-    /**
-     * 从JSON文件加载地图（纯解析，无硬编码）
-     */
+
     public PortMap loadFromFile(String filePath) throws Exception {
         File file = new File(filePath);
         if (!file.exists()) {
             throw new IllegalArgumentException("地图文件不存在: " + filePath);
         }
 
-        // 1. 读取JSON文件
+        //  读取JSON文件
         JsonNode root = objectMapper.readTree(file);
 
-        // 2. 解析地图ID
+        //  解析地图ID
         String mapId = root.get("mapId").asText();
 
-        // 3. 解析节点数组
+        //  解析节点数组
         List<Node> nodes = parseNodes(root.get("nodes"));
 
-        // 4. 解析路段数组
+        //   解析路段数组
         List<Segment> segments = parseSegments(root.get("segments"));
 
-        // 5. 创建地图对象
+        //   创建地图对象
         PortMap portMap = new PortMap(mapId);
         nodes.forEach(portMap::addNode);
         segments.forEach(portMap::addSegment);
 
-        // 6. 验证地图（检查节点引用）
+        //   验证地图（检查节点引用）
         validateMap(portMap);
 
         return portMap;
     }
 
-    /**
-     * 解析节点数组
-     */
+    // 解析节点数组
     private List<Node> parseNodes(JsonNode nodesArray) {
         List<Node> nodes = new ArrayList<>();
 
@@ -75,9 +68,7 @@ public class JsonMapLoader {
         return nodes;
     }
 
-    /**
-     * 解析节点类型字符串
-     */
+    // 节点类型
     private NodeType parseNodeType(String typeStr) {
         try {
             return NodeType.valueOf(typeStr);
@@ -86,9 +77,7 @@ public class JsonMapLoader {
         }
     }
 
-    /**
-     * 解析路段数组
-     */
+    // 路段
     private List<Segment> parseSegments(JsonNode segmentsArray) {
         List<Segment> segments = new ArrayList<>();
 
@@ -98,8 +87,16 @@ public class JsonMapLoader {
                 String from = segmentObj.get("from").asText();
                 String to = segmentObj.get("to").asText();
                 double length = segmentObj.get("length").asDouble();
-                double maxSpeed = segmentObj.has("maxSpeed") ? segmentObj.get("maxSpeed").asDouble() : 5.0;
-                boolean isOneWay = segmentObj.has("isOneWay") && segmentObj.get("isOneWay").asBoolean(false);
+                // 强制获取maxSpeed 如果没有则报错
+                if (!segmentObj.has("maxSpeed")) {
+                    throw new IllegalArgumentException("地图文件错误: 路段 " + id + " 缺少 'maxSpeed' 参数");
+                }
+                double maxSpeed = segmentObj.get("maxSpeed").asDouble();
+
+                if (!segmentObj.has("isOneWay")) {
+                    throw new IllegalArgumentException("地图文件错误: 路段 " + id + " 缺少 'isOneWay' 参数");
+                }
+                boolean isOneWay = segmentObj.get("isOneWay").asBoolean();
 
                 segments.add(new Segment(id, from, to, length, maxSpeed, isOneWay));
             }
@@ -108,9 +105,7 @@ public class JsonMapLoader {
         return segments;
     }
 
-    /**
-     * 验证地图完整性
-     */
+    // 验证地图是否完整
     private void validateMap(PortMap portMap) {
         // 检查所有路段引用的节点是否存在
         for (map.Segment segment : portMap.getAllSegments()) {

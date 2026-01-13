@@ -12,6 +12,7 @@ import io.ConfigLoader.SimulationConfig;
 import core.SimulationEngine;
 import physics.PhysicsEngine;
 import algo.SimpleScheduler;
+import plugins.PhysicsTimeEstimator;
 import time.TimeEstimationModule;
 import decision.ExternalTaskService;
 import decision.LocalDecisionEngine;
@@ -27,9 +28,9 @@ public class Main {
 
     public static void main(String[] args) {
         try {
-            System.out.println("启动港口仿真系统 (全动态加载版)...");
+            System.out.println("启动港口仿真系统 (算法模块化版)...");
 
-            //  加载配置
+            // 加载配置
             String configFile = getConfigFilePath(args);
             ConfigLoader configLoader = new ConfigLoader();
             SimulationConfig simConfig = configLoader.loadConfig(configFile);
@@ -39,7 +40,7 @@ public class Main {
             PortMap portMap = mapLoader.loadFromFile(simConfig.mapFile);
             Map<String, Node> nodeMap = createNodeMap(portMap);
 
-            //   加载实体
+            //  加载实体
             EntityLoader entityLoader = new EntityLoader();
             List<Entity> entities = entityLoader.loadFromFile(simConfig.entityFile);
 
@@ -47,14 +48,19 @@ public class Main {
             TaskLoader taskLoader = new TaskLoader();
             List<Instruction> tasks = taskLoader.loadFromFile(simConfig.taskFile, nodeMap);
 
-            //  配置引擎参数
+            //   配置引擎参数
             SimulationEngine.SimulationConfig engineConfig = new SimulationEngine.SimulationConfig();
             engineConfig.setSimulationDuration(simConfig.endTime);
             engineConfig.setMaxEvents(simConfig.maxEvents);
             engineConfig.setTimeStep(simConfig.timeStep);
 
+            //   初始化核心组件
             PhysicsEngine physics = new PhysicsEngine();
-            TimeEstimationModule timeModule = new TimeEstimationModule(portMap);
+
+            // 注入具体的算法实现
+            TimeEstimationModule timeModule = new PhysicsTimeEstimator(portMap);
+
+            //  加载策略算法 (路径规划 & 任务调度)
             RoutePlanner routePlanner = loadStrategy(
                     simConfig.routePlannerClass,
                     RoutePlanner.class,
@@ -72,12 +78,12 @@ public class Main {
             System.out.println("已加载策略: " + routePlanner.getClass().getSimpleName() +
                     " & " + taskDispatcher.getClass().getSimpleName());
 
+            //  组装并启动
             ExternalTaskService taskService = new LocalDecisionEngine(routePlanner, taskDispatcher);
             SimpleScheduler scheduler = new SimpleScheduler(taskService, timeModule, physics, portMap);
 
             SimulationEngine engine = new SimulationEngine(portMap, engineConfig, scheduler, physics);
 
-            //  注册数据
             for (Entity entity : entities) {
                 engine.addEntity(entity);
             }
@@ -85,7 +91,6 @@ public class Main {
                 engine.addInstruction(task);
             }
 
-            //   启动
             engine.start();
             engine.generateReport();
 
@@ -95,8 +100,6 @@ public class Main {
             System.exit(1);
         }
     }
-
-    // 辅助
 
     private static String getConfigFilePath(String[] args) {
         if (args.length > 0) return args[0];
@@ -114,15 +117,12 @@ public class Main {
     @SuppressWarnings("unchecked")
     private static <T> T loadStrategy(String className, Class<T> interfaceType, Class<?>[] paramTypes, Object[] args) throws Exception {
         if (className == null || className.isEmpty()) {
-            throw new IllegalArgumentException("配置文件中缺少必需的算法类名 (Found null or empty string)");
+            throw new IllegalArgumentException("配置文件中缺少必需的算法类名");
         }
-
         Class<?> clazz = Class.forName(className);
-
         if (!interfaceType.isAssignableFrom(clazz)) {
             throw new IllegalArgumentException("类 " + className + " 没有实现接口 " + interfaceType.getName());
         }
-
         if (paramTypes != null && args != null) {
             Constructor<?> constructor = clazz.getConstructor(paramTypes);
             return (T) constructor.newInstance(args);

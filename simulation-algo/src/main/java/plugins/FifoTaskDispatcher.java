@@ -2,14 +2,15 @@ package plugins;
 
 import decision.TaskDispatcher;
 import entity.Entity;
+import entity.QC;
+import entity.YC;
 import Instruction.Instruction;
 import Instruction.InstructionType;
 import java.util.*;
 
-// 实现 TaskDispatcher 接口
 public class FifoTaskDispatcher implements TaskDispatcher {
 
-    // 算法策略常量
+    // 冲突避让等待时间 (这是策略参数，可以保留，或改为从配置读取)
     private static final long COLLISION_WAIT_MS = 5000L;
 
     private final Map<String, List<Instruction>> instructionQueues;
@@ -31,10 +32,8 @@ public class FifoTaskDispatcher implements TaskDispatcher {
         else if (instruction.getTargetYC() != null) queueKey = "YC";
         else if (instruction.getTargetIT() != null) queueKey = "IT";
 
-        // 如果没有预设时间，算法可以在这里赋予默认值
-        if (instruction.getExpectedDuration() == 0) {
-            instruction.setExpectedDuration(5000);
-        }
+        // 注意：这里删除了之前设置默认5000ms的代码
+        // 耗时将在分配给具体设备时计算
 
         List<Instruction> queue = instructionQueues.get(queueKey);
         if(queue != null) {
@@ -56,15 +55,41 @@ public class FifoTaskDispatcher implements TaskDispatcher {
             if (isEntitySuitable(entity, instruction)) {
                 assignedInstructionIds.add(instruction.getInstructionId());
                 instruction.assignToIT(entity.getId());
+
+                // 【核心修改】动态计算耗时，不再使用硬编码
+                long duration = calculateDuration(entity, instruction);
+                instruction.setExpectedDuration(duration);
+
                 return instruction;
             }
         }
         return null;
     }
 
+    /**
+     * 根据设备性能模型计算任务耗时
+     */
+    private long calculateDuration(Entity entity, Instruction instruction) {
+        long duration = 1000; // 默认最小耗时
+
+        if (entity instanceof QC) {
+            QC qc = (QC) entity;
+            // 模拟：假设平均作业高度30米（实际可从 Instruction 的 extraParameters 获取）
+            // 调用 QC 实体中的物理计算方法
+            duration = (long) qc.calculateLiftTime(30.0);
+        }
+        else if (entity instanceof YC) {
+            YC yc = (YC) entity;
+            // 模拟：假设作业层数为3层
+            // 调用 YC 实体中的物理计算方法
+            duration = (long) yc.calculateCycleTime(3);
+        }
+
+        return duration;
+    }
+
     @Override
     public void onTaskCompleted(String instructionId) {
-        // 忽略为了避让而生成的临时指令
         if (instructionId.startsWith("WAIT_COLLISION")) return;
 
         assignedInstructionIds.remove(instructionId);
@@ -75,7 +100,6 @@ public class FifoTaskDispatcher implements TaskDispatcher {
 
     @Override
     public Instruction resolveCollision(String entityId, String segmentId) {
-        // 策略：返回一个高优先级的等待指令
         System.out.println("[Out算法] 解决 " + entityId + " 冲突 -> 等待 " + COLLISION_WAIT_MS + "ms");
 
         Instruction waitInst = new Instruction(
@@ -85,7 +109,7 @@ public class FifoTaskDispatcher implements TaskDispatcher {
                 "CURRENT"
         );
         waitInst.setExpectedDuration(COLLISION_WAIT_MS);
-        waitInst.setPriority(999); // 最高优先级确保立即执行
+        waitInst.setPriority(999);
         return waitInst;
     }
 

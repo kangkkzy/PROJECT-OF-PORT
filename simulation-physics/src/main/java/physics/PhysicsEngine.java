@@ -1,67 +1,64 @@
 package physics;
 
 import entity.Entity;
+import map.GridMap;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
-// 检测物理碰撞是否发生 并管理路段资源的锁定状态
 public class PhysicsEngine {
-
-    private List<Entity> allEntities;
-// 路段被实体占用
-    private final Map<String, String> segmentLocks;
-
-    // 记录每个实体当前占用了哪些路段 方便快速释放
+    private final GridMap gridMap;
+    // 记录占用： "x_y" -> entityId
+    private final Map<String, String> cellLocks;
+    // 反向索引： entityId -> List<"x_y">
     private final Map<String, List<String>> entityAllocations;
 
-    public PhysicsEngine() {
-        this.allEntities = new ArrayList<>();
-        this.segmentLocks = new ConcurrentHashMap<>();
+    public PhysicsEngine(GridMap gridMap) {
+        this.gridMap = gridMap;
+        this.cellLocks = new ConcurrentHashMap<>();
         this.entityAllocations = new ConcurrentHashMap<>();
     }
 
     public void registerEntity(Entity entity) {
-        this.allEntities.add(entity);
+        // 在 Grid 模式下，注册时不需要额外动作，位置动态更新
     }
 
-    // 检测是否发生了碰撞
-    public boolean detectCollision(String segmentId, String selfEntityId) {
-        if (segmentId == null) return false;
-
-        String occupierId = segmentLocks.get(segmentId);
-
-        // 如果该路段没有被占用 或者占用者就是自己 则视为无冲突
-        if (occupierId == null || occupierId.equals(selfEntityId)) {
-            return false;
-        }
-        return true;
+    // 检测目标坐标字符串 (格式 "x_y") 是否被其他人占用
+    public boolean detectCollision(String targetPosKey, String selfEntityId) {
+        String occupier = cellLocks.get(targetPosKey);
+        // 如果被占用，且占用者不是自己，则冲突
+        return occupier != null && !occupier.equals(selfEntityId);
     }
 
-    // 锁定路段资源
-    public synchronized void lockSegments(String entityId, List<String> segmentIds) {
-        if (segmentIds == null || segmentIds.isEmpty()) return;
-
+    // 锁定坐标资源
+    public synchronized void lockResources(String entityId, List<String> posKeys) {
         List<String> allocated = entityAllocations.computeIfAbsent(entityId, k -> new ArrayList<>());
-
-        for (String segId : segmentIds) {
-            // 记录占用状态
-            segmentLocks.put(segId, entityId);
-            // 记录到实体的名下
-            allocated.add(segId);
+        for (String key : posKeys) {
+            cellLocks.put(key, entityId);
+            allocated.add(key);
         }
-        // System.out.println("[DEBUG] 实体 " + entityId + " 锁定路段: " + segmentIds);
     }
 
-    // 释放资源
+    // 释放某实体持有的所有资源
     public synchronized void unlockResources(String entityId) {
-        List<String> segments = entityAllocations.remove(entityId);
-
-        if (segments != null) {
-            for (String segId : segments) {
-                // 只有当占用者确实是该实体时才释放（防止逻辑错误解开了别人的锁）
-                if (entityId.equals(segmentLocks.get(segId))) {
-                    segmentLocks.remove(segId);
+        List<String> keys = entityAllocations.remove(entityId);
+        if (keys != null) {
+            for (String key : keys) {
+                // 双重检查，防止误删
+                if (entityId.equals(cellLocks.get(key))) {
+                    cellLocks.remove(key);
                 }
+            }
+        }
+    }
+
+    // 释放单个位置 (用于移动时的步进释放)
+    public synchronized void unlockSingleResource(String entityId, String posKey) {
+        if (entityId.equals(cellLocks.get(posKey))) {
+            cellLocks.remove(posKey);
+            // 也要从 entityAllocations 移除
+            List<String> keys = entityAllocations.get(entityId);
+            if (keys != null) {
+                keys.remove(posKey);
             }
         }
     }

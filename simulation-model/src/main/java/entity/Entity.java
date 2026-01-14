@@ -1,9 +1,6 @@
 package entity;
 
-import entity.EntityStatus;
-import entity.EntityType;
-
-import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
 
 public abstract class Entity {
@@ -14,7 +11,6 @@ public abstract class Entity {
     protected EntityStatus status;
     protected long lastUpdateTime;
 
-    // 存储剩余的路径段
     protected List<String> remainingPath;
 
     public Entity(String id, EntityType type, String initialPosition) {
@@ -24,7 +20,7 @@ public abstract class Entity {
         this.currentInstructionId = null;
         this.status = EntityStatus.IDLE;
         this.lastUpdateTime = 0;
-        this.remainingPath = new ArrayList<>();
+        this.remainingPath = new LinkedList<>();
     }
 
     public String getId() {
@@ -74,7 +70,7 @@ public abstract class Entity {
 
     // 路径管理方法
     public void setRemainingPath(List<String> path) {
-        this.remainingPath = (path != null) ? new ArrayList<>(path) : new ArrayList<>();
+        this.remainingPath = (path != null) ? new LinkedList<>(path) : new LinkedList<>();
     }
 
     public List<String> getRemainingPath() {
@@ -85,7 +81,7 @@ public abstract class Entity {
         return remainingPath != null && !remainingPath.isEmpty();
     }
 
-    public String popNextSegment() {
+    public String popNextStep() {
         if (hasRemainingPath()) {
             return remainingPath.remove(0);
         }

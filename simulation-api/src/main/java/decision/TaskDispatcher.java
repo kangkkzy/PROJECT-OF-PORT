@@ -1,4 +1,3 @@
-// 文件: simulation-api/src/main/java/decision/TaskDispatcher.java
 package decision;
 
 import entity.Entity;

@@ -1,19 +1,15 @@
 package plugins;
 
 import entity.Entity;
-import map.PortMap;
-import map.Segment;
+import map.GridMap; // 修改 1: 引入 GridMap
 import time.TimeEstimationModule;
 import java.util.List;
-
-/**
- * 基于物理公式的时间估算算法实现
- */
+// 通过物理距离来算时间
 public class PhysicsTimeEstimator implements TimeEstimationModule {
-    private PortMap portMap;
+    private GridMap gridMap;
 
-    public PhysicsTimeEstimator(PortMap portMap) {
-        this.portMap = portMap;
+    public PhysicsTimeEstimator(GridMap gridMap) {
+        this.gridMap = gridMap;
     }
 
     @Override
@@ -21,20 +17,11 @@ public class PhysicsTimeEstimator implements TimeEstimationModule {
         if (pathIds == null || pathIds.isEmpty()) {
             return 0;
         }
-
-        double totalDistance = 0.0;
-        // 累加路径长度
-        for (String segmentId : pathIds) {
-            Segment seg = portMap.getSegment(segmentId);
-            if (seg != null) {
-                totalDistance += seg.getLength();
-            }
-        }
+// 计算距离
+        double totalDistance = pathIds.size() * gridMap.getCellSize();
 
         return calculateMovementTimeWithAcceleration(entity, totalDistance);
     }
-
-    // 物理公式计算：考虑加速、匀速、减速过程
     private long calculateMovementTimeWithAcceleration(Entity entity, double distance) {
         double maxSpeed = entity.getMaxSpeed();
         double acceleration = entity.getAcceleration();

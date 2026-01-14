@@ -1,49 +1,34 @@
 package core;
 
-import entity.*;
+import algo.SimpleScheduler;
+import entity.Entity; // 【关键修改】添加这一行
 import event.*;
 import Instruction.*;
-import map.PortMap;
-import algo.SimpleScheduler;
-import physics.PhysicsEngine;
+
 import java.util.*;
 
 public class SimulationEngine {
     private long currentTime;
     private PriorityQueue<SimEvent> eventQueue;
-    private Map<String, Instruction> instructionMap;
-    private Map<String, Entity> entityMap;
-    private PortMap portMap;
-
-    // 引擎只有核心调度器和物理引擎
-    private SimpleScheduler scheduler;
-    private PhysicsEngine physicsEngine;
-
-    private List<SimEvent> eventLog;
     private SimulationConfig config;
     private boolean isRunning;
+    private SimpleScheduler scheduler;
+    private List<SimEvent> eventLog;
 
-// 只负责运行
-    public SimulationEngine(PortMap portMap, SimulationConfig config, SimpleScheduler scheduler, PhysicsEngine physicsEngine) {
+    public SimulationEngine(SimulationConfig config, SimpleScheduler scheduler) {
+        this.config = config;
+        this.scheduler = scheduler;
         this.currentTime = 0;
         this.eventQueue = new PriorityQueue<>();
-        this.instructionMap = new HashMap<>();
-        this.entityMap = new HashMap<>();
-        this.portMap = portMap;
-        this.config = config;
         this.eventLog = new ArrayList<>();
         this.isRunning = false;
-        this.scheduler = scheduler;
-        this.physicsEngine = physicsEngine;
     }
 
     public void addEntity(Entity entity) {
-        entityMap.put(entity.getId(), entity);
         scheduler.registerEntity(entity);
     }
 
     public void addInstruction(Instruction instruction) {
-        instructionMap.put(instruction.getInstructionId(), instruction);
         scheduler.addInstruction(instruction);
     }
 
@@ -52,7 +37,7 @@ public class SimulationEngine {
         String entityId = event.getEntityId();
         String instructionId = event.getInstructionId();
 
-        // 事件分发逻辑 通过SimpleScheduler完成
+        // 委托给 Scheduler
         switch (type) {
             case QC_EXECUTION_COMPLETE:
                 scheduler.handleQCExecutionComplete(currentTime, entityId, instructionId);
@@ -93,11 +78,7 @@ public class SimulationEngine {
 
         while (isRunning && currentTime < maxSimulationTime && !eventQueue.isEmpty()) {
             SimEvent event = scheduler.getNextEvent();
-
-            if (event == null) {
-                event = this.eventQueue.poll();
-            }
-
+            if (event == null) event = this.eventQueue.poll();
             if (event == null) break;
 
             currentTime = event.getTimestamp();
@@ -113,7 +94,6 @@ public class SimulationEngine {
         System.out.println("仿真结束!");
     }
 
-    // 从json中读取数据
     public static class SimulationConfig {
         private String name;
         private long simulationDuration;

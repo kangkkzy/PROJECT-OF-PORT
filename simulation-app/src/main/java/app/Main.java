@@ -1,9 +1,9 @@
 package app;
 
+import algo.SimpleScheduler;
 import entity.Entity;
 import Instruction.Instruction;
-import map.PortMap;
-import map.Node;
+import map.GridMap;
 import io.JsonMapLoader;
 import io.EntityLoader;
 import io.TaskLoader;
@@ -11,7 +11,6 @@ import io.ConfigLoader;
 import io.ConfigLoader.SimulationConfig;
 import core.SimulationEngine;
 import physics.PhysicsEngine;
-import algo.SimpleScheduler;
 import plugins.PhysicsTimeEstimator;
 import time.TimeEstimationModule;
 import decision.ExternalTaskService;
@@ -28,36 +27,59 @@ public class Main {
 
     public static void main(String[] args) {
         try {
-            System.out.println("启动港口仿真系统 (事件驱动修正版)...");
+            System.out.println("启动港口仿真系统 (Grid模式 + 物理时间估算)...");
 
+            // 1. 加载配置
             ConfigLoader configLoader = new ConfigLoader();
             SimulationConfig simConfig = configLoader.loadConfig(getConfigFilePath(args));
 
+            //  加载并光栅化地图
             JsonMapLoader mapLoader = new JsonMapLoader();
-            PortMap portMap = mapLoader.loadFromFile(simConfig.mapFile);
-            Map<String, Node> nodeMap = createNodeMap(portMap);
+            GridMap gridMap = mapLoader.loadGridMap(simConfig.mapFile, simConfig.cellSize);
+            System.out.println("地图加载完成: " + gridMap.getWidth() + "x" + gridMap.getHeight() +
+                    " 格子大小:" + gridMap.getCellSize() + "m");
 
+            //  加载实体
             EntityLoader entityLoader = new EntityLoader();
             List<Entity> entities = entityLoader.loadFromFile(simConfig.entityFile);
 
+            //  加载任务
             TaskLoader taskLoader = new TaskLoader();
-            List<Instruction> tasks = taskLoader.loadFromFile(simConfig.taskFile, nodeMap);
+            List<Instruction> tasks = taskLoader.loadFromFile(simConfig.taskFile, gridMap);
 
+            //  初始化核心物理与时间组件
+            PhysicsEngine physics = new PhysicsEngine(gridMap);
+            TimeEstimationModule timeModule = new PhysicsTimeEstimator(gridMap);
+
+            //   动态加载决策策略
+            RoutePlanner routePlanner = loadStrategy(
+                    simConfig.routePlannerClass,
+                    RoutePlanner.class,
+                    new Class<?>[]{GridMap.class},
+                    new Object[]{gridMap}
+            );
+
+            // TaskDispatcher 来构造函数
+            TaskDispatcher taskDispatcher = loadStrategy(
+                    simConfig.taskDispatcherClass,
+                    TaskDispatcher.class,
+                    null,
+                    null
+            );
+
+            //   组装调度层
+            ExternalTaskService taskService = new LocalDecisionEngine(routePlanner, taskDispatcher);
+            SimpleScheduler scheduler = new SimpleScheduler(taskService, timeModule, physics, gridMap);
+
+            //  组装仿真引擎
             SimulationEngine.SimulationConfig engineConfig = new SimulationEngine.SimulationConfig();
             engineConfig.setSimulationDuration(simConfig.endTime);
             engineConfig.setMaxEvents(simConfig.maxEvents);
             engineConfig.setTimeStep(simConfig.timeStep);
 
-            PhysicsEngine physics = new PhysicsEngine();
-            TimeEstimationModule timeModule = new PhysicsTimeEstimator(portMap);
+            SimulationEngine engine = new SimulationEngine(engineConfig, scheduler);
 
-            RoutePlanner routePlanner = loadStrategy(simConfig.routePlannerClass, RoutePlanner.class, new Class<?>[]{PortMap.class}, new Object[]{portMap});
-            TaskDispatcher taskDispatcher = loadStrategy(simConfig.taskDispatcherClass, TaskDispatcher.class, null, null);
-
-            ExternalTaskService taskService = new LocalDecisionEngine(routePlanner, taskDispatcher);
-            SimpleScheduler scheduler = new SimpleScheduler(taskService, timeModule, physics, portMap);
-            SimulationEngine engine = new SimulationEngine(portMap, engineConfig, scheduler, physics);
-
+            //  注册对象到引擎
             for (Entity entity : entities) {
                 engine.addEntity(entity);
             }
@@ -65,15 +87,10 @@ public class Main {
                 engine.addInstruction(task);
             }
 
-            // ==========================================
-            // 【关键修改】初始化调度器：
-            // 此时所有实体和指令已就位，必须显式触发一次分配，
-            // 生成初始事件(Arrival/Wait等)放入队列，
-            // 否则 engine.start() 会因队列为空直接结束。
-            // ==========================================
+            //  初始化调度（生成首批事件）
             scheduler.init();
 
-            // 启动仿真线程
+            //  启动仿真线程
             Thread simThread = new Thread(() -> {
                 try {
                     engine.start();
@@ -83,26 +100,7 @@ public class Main {
                 }
             });
             simThread.start();
-
-            // --- 演示逻辑：模拟外部干预 ---
-            try {
-                // 等待一段时间，让仿真跑起来
-                Thread.sleep(2000);
-
-                System.out.println("\n[Main] >>> 外部指令：紧急暂停 <<<");
-                taskDispatcher.setEmergencyStop(true);
-
-                // 暂停一段时间
-                Thread.sleep(3000);
-
-                System.out.println("\n[Main] >>> 外部指令：恢复运行 <<<");
-                taskDispatcher.setEmergencyStop(false);
-
-                simThread.join();
-
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
+            simThread.join();
 
         } catch (Exception e) {
             e.printStackTrace();
@@ -115,19 +113,17 @@ public class Main {
         return DEFAULT_CONFIG_PATH;
     }
 
-    private static Map<String, Node> createNodeMap(PortMap portMap) {
-        Map<String, Node> nodeMap = new HashMap<>();
-        for (Node node : portMap.getAllNodes()) {
-            nodeMap.put(node.getId(), node);
-        }
-        return nodeMap;
-    }
-
     @SuppressWarnings("unchecked")
     private static <T> T loadStrategy(String className, Class<T> interfaceType, Class<?>[] paramTypes, Object[] args) throws Exception {
-        if (className == null || className.isEmpty()) throw new IllegalArgumentException("类名为空");
+        if (className == null || className.isEmpty()) throw new IllegalArgumentException("策略类名配置为空");
+
         Class<?> clazz = Class.forName(className);
+        if (!interfaceType.isAssignableFrom(clazz)) {
+            throw new IllegalArgumentException("类 " + className + " 未实现接口 " + interfaceType.getName());
+        }
+
         try {
+            // 尝试使用带参数的构造函数
             if (paramTypes != null && args != null) {
                 Constructor<?> constructor = clazz.getConstructor(paramTypes);
                 return (T) constructor.newInstance(args);
@@ -135,6 +131,7 @@ public class Main {
                 return (T) clazz.getDeclaredConstructor().newInstance();
             }
         } catch (NoSuchMethodException e) {
+            // 如果找不到带参构造函数 退化为默认无参构造
             return (T) clazz.getDeclaredConstructor().newInstance();
         }
     }

@@ -4,19 +4,17 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import Instruction.Instruction;
 import Instruction.InstructionType;
-import map.Node;
+import map.GridMap; // 核心修改：引入 GridMap
 import java.io.File;
 import java.time.Instant;
 import java.util.*;
 
-// 加载json任务
 public class TaskLoader {
     private final ObjectMapper objectMapper;
     private static final String KEY_ID = "id";
     private static final String KEY_TYPE = "type";
     private static final String KEY_ORIGIN = "origin";
     private static final String KEY_DESTINATION = "destination";
-
     private static final String KEY_CONTAINER_ID = "containerId";
     private static final String KEY_CONTAINER_WEIGHT = "containerWeight";
     private static final String KEY_TARGET_QC = "targetQC";
@@ -31,22 +29,22 @@ public class TaskLoader {
         this.objectMapper = new ObjectMapper();
     }
 
-    public List<Instruction> loadFromFile(String filePath, Map<String, Node> nodeMap) throws Exception {
+    public List<Instruction> loadFromFile(String filePath, GridMap gridMap) throws Exception {
         File file = new File(filePath);
         if (!file.exists()) {
             throw new IllegalArgumentException("任务文件不存在: " + filePath);
         }
 
         JsonNode root = objectMapper.readTree(file);
-        return parseTasks(root, nodeMap);
+        return parseTasks(root, gridMap);
     }
 
-    private List<Instruction> parseTasks(JsonNode root, Map<String, Node> nodeMap) {
+    private List<Instruction> parseTasks(JsonNode root, GridMap gridMap) {
         List<Instruction> tasks = new ArrayList<>();
 
         if (root.isArray()) {
             for (JsonNode taskObj : root) {
-                Instruction task = parseTask(taskObj, nodeMap);
+                Instruction task = parseTask(taskObj, gridMap);
                 if (task != null) {
                     tasks.add(task);
                 }
@@ -59,7 +57,8 @@ public class TaskLoader {
         return tasks;
     }
 
-    private Instruction parseTask(JsonNode taskObj, Map<String, Node> nodeMap) {
+    private Instruction parseTask(JsonNode taskObj, GridMap gridMap) {
+        //  解析基础必填信息
         String taskId = taskObj.get(KEY_ID).asText();
         String typeStr = taskObj.get(KEY_TYPE).asText();
         String originNodeId = taskObj.get(KEY_ORIGIN).asText();
@@ -67,18 +66,17 @@ public class TaskLoader {
 
         InstructionType type = parseInstructionType(typeStr);
 
-        Node origin = nodeMap.get(originNodeId);
-        if (origin == null) {
-            throw new IllegalArgumentException("起始节点不存在: " + originNodeId);
+        //   校验节点是否存在于 GridMap 中
+        if (gridMap.getNodePosition(originNodeId) == null) {
+            throw new IllegalArgumentException("起始节点不存在(未在地图定义): " + originNodeId);
+        }
+        if (gridMap.getNodePosition(destinationNodeId) == null) {
+            throw new IllegalArgumentException("目标节点不存在(未在地图定义): " + destinationNodeId);
         }
 
-        Node destination = nodeMap.get(destinationNodeId);
-        if (destination == null) {
-            throw new IllegalArgumentException("目标节点不存在: " + destinationNodeId);
-        }
+        Instruction task = new Instruction(taskId, type, originNodeId, destinationNodeId);
 
-        Instruction task = new Instruction(taskId, type, origin.getId(), destination.getId());
-
+        // 解析可选业务字段
         if (taskObj.has(KEY_CONTAINER_ID)) {
             task.setContainerId(taskObj.get(KEY_CONTAINER_ID).asText());
         }
@@ -125,6 +123,7 @@ public class TaskLoader {
         return task;
     }
 
+    // 辅助方法 - 解析参数 Map
     private Map<String, Object> parseParameters(JsonNode paramsNode) {
         Map<String, Object> parameters = new HashMap<>();
         if (paramsNode != null && paramsNode.isObject()) {
@@ -148,6 +147,7 @@ public class TaskLoader {
         return parameters;
     }
 
+    // 辅助方法 - 解析枚举类型
     private InstructionType parseInstructionType(String typeStr) {
         try {
             return InstructionType.valueOf(typeStr);

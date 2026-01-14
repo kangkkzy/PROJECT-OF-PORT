@@ -9,7 +9,6 @@ public class LocalDecisionEngine implements ExternalTaskService {
     private final RoutePlanner routePlanner;
     private final TaskDispatcher taskDispatcher;
 
-    // 构造注入：通过接口接收算法实例
     public LocalDecisionEngine(RoutePlanner routePlanner, TaskDispatcher taskDispatcher) {
         this.routePlanner = routePlanner;
         this.taskDispatcher = taskDispatcher;
@@ -31,13 +30,18 @@ public class LocalDecisionEngine implements ExternalTaskService {
     }
 
     @Override
+    public Instruction askForInterruption(Entity entity) {
+        // 【新增】转发给调度算法
+        return taskDispatcher.checkInterruption(entity);
+    }
+
+    @Override
     public void reportTaskCompletion(String instructionId, String entityId) {
         taskDispatcher.onTaskCompleted(instructionId);
     }
 
     @Override
     public Instruction askForCollisionSolution(String entityId, String segmentId) {
-        // 直接转发给外部算法，不在这里做决定
         return taskDispatcher.resolveCollision(entityId, segmentId);
     }
 }

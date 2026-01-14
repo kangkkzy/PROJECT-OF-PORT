@@ -1,5 +1,11 @@
 package entity;
 
+import entity.EntityStatus;
+import entity.EntityType;
+
+import java.util.ArrayList;
+import java.util.List;
+
 public abstract class Entity {
     protected String id;
     protected EntityType type;
@@ -8,6 +14,9 @@ public abstract class Entity {
     protected EntityStatus status;
     protected long lastUpdateTime;
 
+    // 存储剩余的路径段
+    protected List<String> remainingPath;
+
     public Entity(String id, EntityType type, String initialPosition) {
         this.id = id;
         this.type = type;
@@ -15,6 +24,7 @@ public abstract class Entity {
         this.currentInstructionId = null;
         this.status = EntityStatus.IDLE;
         this.lastUpdateTime = 0;
+        this.remainingPath = new ArrayList<>();
     }
 
     public String getId() {
@@ -60,6 +70,26 @@ public abstract class Entity {
 
     public boolean isAvailable() {
         return status == EntityStatus.IDLE || status == EntityStatus.WAITING;
+    }
+
+    // 路径管理方法
+    public void setRemainingPath(List<String> path) {
+        this.remainingPath = (path != null) ? new ArrayList<>(path) : new ArrayList<>();
+    }
+
+    public List<String> getRemainingPath() {
+        return remainingPath;
+    }
+
+    public boolean hasRemainingPath() {
+        return remainingPath != null && !remainingPath.isEmpty();
+    }
+
+    public String popNextSegment() {
+        if (hasRemainingPath()) {
+            return remainingPath.remove(0);
+        }
+        return null;
     }
 
     public abstract double getMaxSpeed();

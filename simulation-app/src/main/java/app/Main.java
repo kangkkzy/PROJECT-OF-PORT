@@ -28,60 +28,34 @@ public class Main {
 
     public static void main(String[] args) {
         try {
-            System.out.println("启动港口仿真系统 (算法模块化版)...");
+            System.out.println("启动港口仿真系统 (事件驱动修正版)...");
 
-            // 加载配置
-            String configFile = getConfigFilePath(args);
             ConfigLoader configLoader = new ConfigLoader();
-            SimulationConfig simConfig = configLoader.loadConfig(configFile);
+            SimulationConfig simConfig = configLoader.loadConfig(getConfigFilePath(args));
 
-            //  加载地图
             JsonMapLoader mapLoader = new JsonMapLoader();
             PortMap portMap = mapLoader.loadFromFile(simConfig.mapFile);
             Map<String, Node> nodeMap = createNodeMap(portMap);
 
-            //  加载实体
             EntityLoader entityLoader = new EntityLoader();
             List<Entity> entities = entityLoader.loadFromFile(simConfig.entityFile);
 
-            //   加载任务
             TaskLoader taskLoader = new TaskLoader();
             List<Instruction> tasks = taskLoader.loadFromFile(simConfig.taskFile, nodeMap);
 
-            //   配置引擎参数
             SimulationEngine.SimulationConfig engineConfig = new SimulationEngine.SimulationConfig();
             engineConfig.setSimulationDuration(simConfig.endTime);
             engineConfig.setMaxEvents(simConfig.maxEvents);
             engineConfig.setTimeStep(simConfig.timeStep);
 
-            //   初始化核心组件
             PhysicsEngine physics = new PhysicsEngine();
-
-            // 注入具体的算法实现
             TimeEstimationModule timeModule = new PhysicsTimeEstimator(portMap);
 
-            //  加载策略算法 (路径规划 & 任务调度)
-            RoutePlanner routePlanner = loadStrategy(
-                    simConfig.routePlannerClass,
-                    RoutePlanner.class,
-                    new Class<?>[]{PortMap.class},
-                    new Object[]{portMap}
-            );
+            RoutePlanner routePlanner = loadStrategy(simConfig.routePlannerClass, RoutePlanner.class, new Class<?>[]{PortMap.class}, new Object[]{portMap});
+            TaskDispatcher taskDispatcher = loadStrategy(simConfig.taskDispatcherClass, TaskDispatcher.class, null, null);
 
-            TaskDispatcher taskDispatcher = loadStrategy(
-                    simConfig.taskDispatcherClass,
-                    TaskDispatcher.class,
-                    null,
-                    null
-            );
-
-            System.out.println("已加载策略: " + routePlanner.getClass().getSimpleName() +
-                    " & " + taskDispatcher.getClass().getSimpleName());
-
-            //  组装并启动
             ExternalTaskService taskService = new LocalDecisionEngine(routePlanner, taskDispatcher);
             SimpleScheduler scheduler = new SimpleScheduler(taskService, timeModule, physics, portMap);
-
             SimulationEngine engine = new SimulationEngine(portMap, engineConfig, scheduler, physics);
 
             for (Entity entity : entities) {
@@ -91,11 +65,46 @@ public class Main {
                 engine.addInstruction(task);
             }
 
-            engine.start();
-            engine.generateReport();
+            // ==========================================
+            // 【关键修改】初始化调度器：
+            // 此时所有实体和指令已就位，必须显式触发一次分配，
+            // 生成初始事件(Arrival/Wait等)放入队列，
+            // 否则 engine.start() 会因队列为空直接结束。
+            // ==========================================
+            scheduler.init();
+
+            // 启动仿真线程
+            Thread simThread = new Thread(() -> {
+                try {
+                    engine.start();
+                    engine.generateReport();
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            });
+            simThread.start();
+
+            // --- 演示逻辑：模拟外部干预 ---
+            try {
+                // 等待一段时间，让仿真跑起来
+                Thread.sleep(2000);
+
+                System.out.println("\n[Main] >>> 外部指令：紧急暂停 <<<");
+                taskDispatcher.setEmergencyStop(true);
+
+                // 暂停一段时间
+                Thread.sleep(3000);
+
+                System.out.println("\n[Main] >>> 外部指令：恢复运行 <<<");
+                taskDispatcher.setEmergencyStop(false);
+
+                simThread.join();
+
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
 
         } catch (Exception e) {
-            System.err.println("仿真发生严重错误: " + e.getMessage());
             e.printStackTrace();
             System.exit(1);
         }
@@ -116,17 +125,16 @@ public class Main {
 
     @SuppressWarnings("unchecked")
     private static <T> T loadStrategy(String className, Class<T> interfaceType, Class<?>[] paramTypes, Object[] args) throws Exception {
-        if (className == null || className.isEmpty()) {
-            throw new IllegalArgumentException("配置文件中缺少必需的算法类名");
-        }
+        if (className == null || className.isEmpty()) throw new IllegalArgumentException("类名为空");
         Class<?> clazz = Class.forName(className);
-        if (!interfaceType.isAssignableFrom(clazz)) {
-            throw new IllegalArgumentException("类 " + className + " 没有实现接口 " + interfaceType.getName());
-        }
-        if (paramTypes != null && args != null) {
-            Constructor<?> constructor = clazz.getConstructor(paramTypes);
-            return (T) constructor.newInstance(args);
-        } else {
+        try {
+            if (paramTypes != null && args != null) {
+                Constructor<?> constructor = clazz.getConstructor(paramTypes);
+                return (T) constructor.newInstance(args);
+            } else {
+                return (T) clazz.getDeclaredConstructor().newInstance();
+            }
+        } catch (NoSuchMethodException e) {
             return (T) clazz.getDeclaredConstructor().newInstance();
         }
     }

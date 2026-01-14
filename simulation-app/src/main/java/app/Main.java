@@ -1,27 +1,26 @@
 package app;
 
 import algo.SimpleScheduler;
+import core.SimulationEngine;
+import decision.RoutePlanner;
+import decision.TaskAllocator;   // 新增
+import decision.TaskGenerator;
+import decision.TrafficController; // 新增
 import entity.Entity;
 import Instruction.Instruction;
-import map.GridMap;
-import io.JsonMapLoader;
-import io.EntityLoader;
-import io.TaskLoader;
 import io.ConfigLoader;
 import io.ConfigLoader.SimulationConfig;
-import io.LogWriter; // 新增引用
-import core.SimulationEngine;
+import io.EntityLoader;
+import io.JsonMapLoader;
+import io.LogWriter;
+import io.TaskLoader;
+import map.GridMap;
 import physics.PhysicsEngine;
 import plugins.PhysicsTimeEstimator;
 import time.TimeEstimationModule;
-import decision.ExternalTaskService;
-import decision.LocalDecisionEngine;
-import decision.RoutePlanner;
-import decision.TaskDispatcher;
-import decision.TaskGenerator;
 
 import java.lang.reflect.Constructor;
-import java.util.*;
+import java.util.List;
 
 public class Main {
     private static final String DEFAULT_CONFIG_PATH = "config/simulation-config.json";
@@ -47,7 +46,19 @@ public class Main {
             TimeEstimationModule timeModule = new PhysicsTimeEstimator(gridMap);
 
             RoutePlanner routePlanner = loadStrategy(simConfig.routePlannerClass, RoutePlanner.class, new Class<?>[]{GridMap.class}, new Object[]{gridMap});
-            TaskDispatcher taskDispatcher = loadStrategy(simConfig.taskDispatcherClass, TaskDispatcher.class, null, null);
+
+            // --- 核心修改：加载并转型 TaskDispatcher ---
+            // 1. 先作为 Object 加载实现类 (FifoTaskDispatcher)
+            Object dispatcherImpl = loadStrategy(simConfig.taskDispatcherClass, Object.class, null, null);
+
+            // 2. 检查它是否同时实现了两个新接口
+            if (!(dispatcherImpl instanceof TaskAllocator) || !(dispatcherImpl instanceof TrafficController)) {
+                throw new IllegalArgumentException("配置的 taskDispatcherClass 必须同时实现 TaskAllocator 和 TrafficController 接口");
+            }
+
+            // 3. 拆分引用
+            TaskAllocator taskAllocator = (TaskAllocator) dispatcherImpl;
+            TrafficController trafficController = (TrafficController) dispatcherImpl;
 
             TaskGenerator taskGenerator = null;
             if (simConfig.taskGeneratorClass != null) {
@@ -56,8 +67,16 @@ public class Main {
                         new Object[]{gridMap, entities});
             }
 
-            ExternalTaskService taskService = new LocalDecisionEngine(routePlanner, taskDispatcher);
-            SimpleScheduler scheduler = new SimpleScheduler(taskService, timeModule, physics, gridMap, taskGenerator);
+            // --- 核心修改：使用新的 7 参数构造函数 ---
+            SimpleScheduler scheduler = new SimpleScheduler(
+                    taskAllocator,
+                    trafficController,
+                    routePlanner,
+                    timeModule,
+                    physics,
+                    gridMap,
+                    taskGenerator
+            );
 
             SimulationEngine.SimulationConfig engineConfig = new SimulationEngine.SimulationConfig();
             engineConfig.setSimulationDuration(simConfig.endTime);
@@ -75,11 +94,8 @@ public class Main {
                 try {
                     engine.start();
                     engine.generateReport();
-
-                    // 【新增】仿真结束后，将日志落库
                     LogWriter logWriter = new LogWriter();
                     logWriter.writeLog(engine.getEventLog(), simConfig.logDir);
-
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
@@ -99,7 +115,12 @@ public class Main {
     private static <T> T loadStrategy(String className, Class<T> interfaceType, Class<?>[] paramTypes, Object[] args) throws Exception {
         if (className == null || className.isEmpty()) return null;
         Class<?> clazz = Class.forName(className);
-        if (!interfaceType.isAssignableFrom(clazz)) throw new IllegalArgumentException("类 " + className + " 未实现接口 " + interfaceType.getName());
+
+        // 修改检查逻辑：允许加载 Object 类型，或者严格检查接口实现
+        if (interfaceType != Object.class && !interfaceType.isAssignableFrom(clazz)) {
+            throw new IllegalArgumentException("类 " + className + " 未实现接口 " + interfaceType.getName());
+        }
+
         try {
             if (paramTypes != null && args != null) {
                 Constructor<?> constructor = clazz.getConstructor(paramTypes);

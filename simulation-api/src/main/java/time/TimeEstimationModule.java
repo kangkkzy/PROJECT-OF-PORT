@@ -1,10 +1,10 @@
 package time;
 
 import entity.Entity;
+import map.Location;
 import java.util.List;
-// 时间估算接口
 
 public interface TimeEstimationModule {
-
-    long estimateMovementTime(Entity entity, List<String> pathIds);
+    // 接口签名已更新，接受 List<Location>
+    long estimateMovementTime(Entity entity, List<Location> pathIds);
 }

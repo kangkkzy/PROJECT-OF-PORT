@@ -1,33 +1,34 @@
 package plugins;
 
 import entity.Entity;
-import map.GridMap; // 修改 1: 引入 GridMap
+import map.GridMap;
+import map.Location;
 import time.TimeEstimationModule;
 import java.util.List;
-// 通过物理距离来算时间
+
 public class PhysicsTimeEstimator implements TimeEstimationModule {
-    private GridMap gridMap;
+    private final GridMap gridMap;
 
     public PhysicsTimeEstimator(GridMap gridMap) {
         this.gridMap = gridMap;
     }
 
     @Override
-    public long estimateMovementTime(Entity entity, List<String> pathIds) {
-        if (pathIds == null || pathIds.isEmpty()) {
+    public long estimateMovementTime(Entity entity, List<Location> path) {
+        if (path == null || path.isEmpty()) {
             return 0;
         }
-// 计算距离
-        double totalDistance = pathIds.size() * gridMap.getCellSize();
+        // 计算距离：路径点数量 * 格子大小
+        double distance = path.size() * gridMap.getCellSize();
 
-        return calculateMovementTimeWithAcceleration(entity, totalDistance);
+        return calculateMovementTimeWithAcceleration(entity, distance);
     }
+
     private long calculateMovementTimeWithAcceleration(Entity entity, double distance) {
         double maxSpeed = entity.getMaxSpeed();
         double acceleration = entity.getAcceleration();
         double deceleration = entity.getDeceleration();
 
-        // 避免除零错误
         if (acceleration <= 0 || deceleration <= 0 || maxSpeed <= 0) {
             return (long) (distance / (maxSpeed > 0 ? maxSpeed : 1.0) * 1000);
         }
@@ -39,7 +40,6 @@ public class PhysicsTimeEstimator implements TimeEstimationModule {
         double totalTime;
 
         if (distance <= totalAccDecDistance) {
-            // 距离太短 无法达到最大速度
             double achievableSpeed = Math.sqrt(
                     (2 * acceleration * deceleration * distance) /
                             (acceleration + deceleration)
@@ -48,7 +48,6 @@ public class PhysicsTimeEstimator implements TimeEstimationModule {
             double decTime = achievableSpeed / deceleration;
             totalTime = accTime + decTime;
         } else {
-            // 梯形速度曲线（加速 -> 匀速 -> 减速）
             double accTime = maxSpeed / acceleration;
             double decTime = maxSpeed / deceleration;
             double cruiseDistance = distance - totalAccDecDistance;

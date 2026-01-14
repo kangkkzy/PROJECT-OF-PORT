@@ -1,66 +1,65 @@
 package entity;
 
+import map.Location; // 关键：导入新类
 import java.util.LinkedList;
 import java.util.List;
 
 public abstract class Entity {
     protected String id;
     protected EntityType type;
-    protected String currentPosition;
+
+    // 修改点1：新增 Location 类型的当前位置
+    protected Location currentLocation;
+    // 修改点2：新增初始节点ID字段
+    protected String initialNodeId;
+
     protected String currentInstructionId;
     protected EntityStatus status;
     protected long lastUpdateTime;
 
-    protected List<String> remainingPath;
+    // 修改点3：路径列表改为 Location 类型
+    protected List<Location> remainingPath;
 
     public Entity(String id, EntityType type, String initialPosition) {
         this.id = id;
         this.type = type;
-        this.currentPosition = initialPosition;
+        this.initialNodeId = initialPosition; // 保存初始ID
+        this.currentLocation = null;
         this.currentInstructionId = null;
         this.status = EntityStatus.IDLE;
         this.lastUpdateTime = 0;
         this.remainingPath = new LinkedList<>();
     }
 
-    public String getId() {
-        return id;
-    }
+    // Getters and Setters
+    public String getId() { return id; }
+    public EntityType getType() { return type; }
 
-    public EntityType getType() {
-        return type;
-    }
+    // 新增方法：SimpleScheduler 需要调用这个
+    public Location getCurrentLocation() { return currentLocation; }
+    public void setCurrentLocation(Location location) { this.currentLocation = location; }
 
+    // 新增方法：SimpleScheduler 需要调用这个
+    public String getInitialNodeId() { return initialNodeId; }
+
+    // 兼容旧方法：返回 String 类型的坐标
     public String getCurrentPosition() {
-        return currentPosition;
+        return currentLocation != null ? currentLocation.toKey() : null;
     }
 
-    public void setCurrentPosition(String position) {
-        this.currentPosition = position;
+    // 兼容旧方法：允许设置 String 类型的坐标 (解析为 Location)
+    public void setCurrentPosition(String posKey) {
+        if (posKey != null) {
+            this.currentLocation = Location.parse(posKey);
+        }
     }
 
-    public String getCurrentInstructionId() {
-        return currentInstructionId;
-    }
+    public String getCurrentInstructionId() { return currentInstructionId; }
+    public void setCurrentInstructionId(String instructionId) { this.currentInstructionId = instructionId; }
 
-    public void setCurrentInstructionId(String instructionId) {
-        this.currentInstructionId = instructionId;
-    }
-
-    public EntityStatus getStatus() {
-        return status;
-    }
-
+    public EntityStatus getStatus() { return status; }
     public void setStatus(EntityStatus status) {
         this.status = status;
-        this.lastUpdateTime = System.currentTimeMillis();
-    }
-
-    public long getLastUpdateTime() {
-        return lastUpdateTime;
-    }
-
-    public void updateLastUpdateTime() {
         this.lastUpdateTime = System.currentTimeMillis();
     }
 
@@ -68,20 +67,18 @@ public abstract class Entity {
         return status == EntityStatus.IDLE || status == EntityStatus.WAITING;
     }
 
-    // 路径管理方法
-    public void setRemainingPath(List<String> path) {
+    // 修改点4：路径操作全部改为 Location
+    public void setRemainingPath(List<Location> path) {
         this.remainingPath = (path != null) ? new LinkedList<>(path) : new LinkedList<>();
     }
 
-    public List<String> getRemainingPath() {
-        return remainingPath;
-    }
+    public List<Location> getRemainingPath() { return remainingPath; }
 
     public boolean hasRemainingPath() {
         return remainingPath != null && !remainingPath.isEmpty();
     }
 
-    public String popNextStep() {
+    public Location popNextStep() {
         if (hasRemainingPath()) {
             return remainingPath.remove(0);
         }
@@ -91,11 +88,4 @@ public abstract class Entity {
     public abstract double getMaxSpeed();
     public abstract double getAcceleration();
     public abstract double getDeceleration();
-
-    @Override
-    public String toString() {
-        return String.format("%s[%s] 位置:%s 状态:%s 指令:%s",
-                type.getChineseName(), id, currentPosition, status.getChineseName(),
-                currentInstructionId != null ? currentInstructionId : "无");
-    }
 }

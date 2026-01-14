@@ -2,7 +2,9 @@ package plugins;
 
 import entity.Entity;
 import map.GridMap;
+import map.Location; // 必须导入这个新类
 import time.TimeEstimationModule;
+
 import java.util.List;
 
 public class GridTimeEstimator implements TimeEstimationModule {
@@ -13,17 +15,16 @@ public class GridTimeEstimator implements TimeEstimationModule {
     }
 
     @Override
-    public long estimateMovementTime(Entity entity, List<String> pathIds) {
-        // pathIds 是 grid keys ("x_y") 的列表
-        if (pathIds == null || pathIds.isEmpty()) return 0;
+    public long estimateMovementTime(Entity entity, List<Location> path) {
+        // 参数类型已从 List<String> 改为 List<Location>
+        if (path == null || path.isEmpty()) return 0;
 
-        // 距离 = 格子数 * 格子大小
-        double distance = pathIds.size() * gridMap.getCellSize();
+        // 逻辑保持不变：距离 = 格子数 * 格子大小
+        double distance = path.size() * gridMap.getCellSize();
         double speed = entity.getMaxSpeed();
 
-        if (speed <= 0) return 1000; // 防止除零
+        if (speed <= 0) return 1000;
 
-        // 简单匀速运动公式：时间 = 距离 / 速度 * 1000 (ms)
         return (long) ((distance / speed) * 1000);
     }
 }

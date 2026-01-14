@@ -2,97 +2,90 @@ package plugins;
 
 import decision.RoutePlanner;
 import map.GridMap;
+import map.Location;
 import java.util.*;
 
-// 实现 RoutePlanner 接口，返回 List<String>，内容为 "x_y" 格式的坐标
 public class GridRoutePlanner implements RoutePlanner {
     private final GridMap gridMap;
-    private static final int[][] DIRS = {{0, 1}, {0, -1}, {1, 0}, {-1, 0}}; // 上下左右
+    private static final int[][] DIRS = {{0, 1}, {0, -1}, {1, 0}, {-1, 0}};
 
     public GridRoutePlanner(GridMap gridMap) {
         this.gridMap = gridMap;
     }
 
     @Override
-    public List<String> searchRoute(String originId, String destinationId) {
-        String startKey = gridMap.getNodePosition(originId);
-        String endKey = gridMap.getNodePosition(destinationId);
-
-        if (startKey == null || endKey == null || startKey.equals(endKey)) {
-            return Collections.emptyList();
-        }
-
-        int[] start = GridMap.parseKey(startKey);
-        int[] end = GridMap.parseKey(endKey);
-
-        return aStarSearch(start[0], start[1], end[0], end[1]);
+    public List<Location> searchRoute(String originId, String destinationId) {
+        Location start = gridMap.getNodeLocation(originId);
+        Location end = gridMap.getNodeLocation(destinationId);
+        return searchRoute(start, end);
     }
 
-    private List<String> aStarSearch(int startX, int startY, int endX, int endY) {
-        PriorityQueue<NodeRecord> openList = new PriorityQueue<>(Comparator.comparingDouble(n -> n.cost + n.heuristic));
-        Map<String, Double> costSoFar = new HashMap<>();
-        Map<String, String> cameFrom = new HashMap<>();
+    @Override
+    public List<Location> searchRoute(Location start, Location end) {
+        if (start == null || end == null || start.equals(end)) {
+            return Collections.emptyList();
+        }
+        return aStarSearch(start, end);
+    }
 
-        String startKey = GridMap.toKey(startX, startY);
-        String endKey = GridMap.toKey(endX, endY);
+    private List<Location> aStarSearch(Location start, Location end) {
+        PriorityQueue<NodeRecord> openList = new PriorityQueue<>(Comparator.comparingDouble(n -> n.f));
+        Map<Location, Double> costSoFar = new HashMap<>();
+        Map<Location, Location> cameFrom = new HashMap<>();
 
-        openList.add(new NodeRecord(startX, startY, 0, heuristic(startX, startY, endX, endY)));
-        costSoFar.put(startKey, 0.0);
-        cameFrom.put(startKey, null);
+        openList.add(new NodeRecord(start, 0, heuristic(start, end)));
+        costSoFar.put(start, 0.0);
+        cameFrom.put(start, null);
 
         boolean found = false;
 
         while (!openList.isEmpty()) {
             NodeRecord current = openList.poll();
-            String currentKey = GridMap.toKey(current.x, current.y);
-
-            if (currentKey.equals(endKey)) {
+            if (current.loc.equals(end)) {
                 found = true;
                 break;
             }
 
             for (int[] dir : DIRS) {
-                int nextX = current.x + dir[0];
-                int nextY = current.y + dir[1];
-                String nextKey = GridMap.toKey(nextX, nextY);
+                int nextX = current.loc.x + dir[0];
+                int nextY = current.loc.y + dir[1];
 
                 if (!gridMap.isWalkable(nextX, nextY)) continue;
 
-                double newCost = costSoFar.get(currentKey) + 1.0; // 假设每格代价为1
+                Location nextLoc = new Location(nextX, nextY);
+                double newCost = costSoFar.get(current.loc) + 1.0;
 
-                if (!costSoFar.containsKey(nextKey) || newCost < costSoFar.get(nextKey)) {
-                    costSoFar.put(nextKey, newCost);
-                    double h = heuristic(nextX, nextY, endX, endY);
-                    openList.add(new NodeRecord(nextX, nextY, newCost, h));
-                    cameFrom.put(nextKey, currentKey);
+                if (!costSoFar.containsKey(nextLoc) || newCost < costSoFar.get(nextLoc)) {
+                    costSoFar.put(nextLoc, newCost);
+                    double h = heuristic(nextLoc, end);
+                    openList.add(new NodeRecord(nextLoc, newCost, newCost + h));
+                    cameFrom.put(nextLoc, current.loc);
                 }
             }
         }
 
         if (!found) return Collections.emptyList();
 
-        // 重建路径
-        LinkedList<String> path = new LinkedList<>();
-        String curr = endKey;
-        while (curr != null && !curr.equals(startKey)) {
+        LinkedList<Location> path = new LinkedList<>();
+        Location curr = end;
+        while (curr != null && !curr.equals(start)) {
             path.addFirst(curr);
             curr = cameFrom.get(curr);
         }
         return path;
     }
 
-    private double heuristic(int x1, int y1, int x2, int y2) {
-        // 曼哈顿距离
-        return Math.abs(x1 - x2) + Math.abs(y1 - y2);
+    private double heuristic(Location a, Location b) {
+        return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
     }
 
     private static class NodeRecord {
-        int x, y;
-        double cost;
-        double heuristic;
+        Location loc;
+        double g; // cost
+        double f; // cost + heuristic
 
-        NodeRecord(int x, int y, double cost, double heuristic) {
-            this.x = x; this.y = y; this.cost = cost; this.heuristic = heuristic;
+        NodeRecord(Location loc, double g, double f) {
+            this.loc = loc; this.g = g; this.f = f;
         }
     }
 }

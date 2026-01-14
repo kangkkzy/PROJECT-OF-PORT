@@ -205,12 +205,23 @@ public class SimpleScheduler {
     private void moveToTarget(long currentTime, Entity entity, Location target, Instruction inst) {
         entity.setStatus(EntityStatus.MOVING);
         List<Location> path = routePlanner.searchRoute(entity.getCurrentLocation(), target);
+
+        // 【核心修改点 1】检查路径是否为空，防止越界异常
+        if (path == null || path.isEmpty()) {
+            System.err.println(">>> [警告] 寻路失败或路径为空! Entity: " + entity.getId()
+                    + " From: " + entity.getCurrentLocation() + " To: " + target);
+            // 无法移动，保持 IDLE 状态，避免程序崩溃
+            entity.setStatus(EntityStatus.IDLE);
+            return;
+        }
+
         entity.setRemainingPath(path);
         processNextStep(currentTime, entity);
     }
 
     private void scheduleJointExecution(long currentTime, Entity crane, Entity it, Instruction inst) {
-        long duration = 20000; // 模拟耗时
+        long duration = timeModule.estimateOperationTime(crane, inst); // 使用新接口
+
         crane.setStatus(EntityStatus.EXECUTING);
         it.setStatus(EntityStatus.EXECUTING);
         long finishTime = currentTime + duration;
@@ -245,6 +256,11 @@ public class SimpleScheduler {
     private void processNextStep(long currentTime, Entity entity) {
         Instruction interrupt = trafficController.checkInterruption(entity);
         if (interrupt != null) return;
+
+        // 【核心修改点 2】双重保险：在获取下一步之前检查路径是否为空
+        if (!entity.hasRemainingPath()) {
+            return;
+        }
 
         Location nextLoc = entity.getRemainingPath().get(0);
         if (physicsEngine.detectCollision(nextLoc, entity.getId())) {

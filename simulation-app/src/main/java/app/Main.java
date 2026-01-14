@@ -11,7 +11,8 @@ import Instruction.Instruction;
 import io.*;
 import map.GridMap;
 import physics.PhysicsEngine;
-import plugins.PhysicsTimeEstimator;
+import plugins.PhysicsTimeEstimator; // 或 GridTimeEstimator
+import plugins.GridTimeEstimator;
 import time.TimeEstimationModule;
 
 import java.util.List;
@@ -20,6 +21,7 @@ public class Main {
     public static void main(String[] args) {
         try {
             String configPath = args.length > 0 ? args[0] : "config/simulation-config.json";
+            // ConfigLoader 现在返回 Record
             var config = new ConfigLoader().load(configPath);
 
             // 1. 加载基础设施
@@ -32,20 +34,20 @@ public class Main {
 
             // 2. 初始化引擎组件
             PhysicsEngine physics = new PhysicsEngine(gridMap);
-            TimeEstimationModule timeModule = new PhysicsTimeEstimator(gridMap);
+            // 这里使用 GridTimeEstimator 以支持新的 operationTime 接口
+            TimeEstimationModule timeModule = new GridTimeEstimator(gridMap);
 
-            // 3. 加载策略插件 (反射)
-            // 修改点：使用单参数加载方法
+            // 3. 加载策略插件
             RoutePlanner routePlanner = loadPlugin(
                     config.strategies().routePlannerClass(),
                     GridMap.class,
                     gridMap
             );
 
-            // 修改点：使用无参加载方法 (消除 null, null 调用)
+            // Dispatcher 同时实现 Allocator 和 TrafficController
             Object dispatcher = loadPlugin(config.strategies().taskDispatcherClass());
 
-            // 修改点：使用多参数加载方法 (消除歧义)
+            // Generator 需要多参数
             TaskGenerator generator = loadPluginMulti(
                     config.strategies().taskGeneratorClass(),
                     new Class<?>[]{GridMap.class, List.class},
@@ -63,12 +65,12 @@ public class Main {
                     generator
             );
 
-            // 5. 注入数据
+            // 5. 注入数据并初始化
             entities.forEach(scheduler::registerEntity);
             tasks.forEach(scheduler::addInstruction);
-            scheduler.init(); // 触发初始状态评估
+            scheduler.init();
 
-            // 6. 启动引擎
+            // 6. 启动
             SimulationEngine engine = new SimulationEngine(
                     config.timeSettings().endTime(),
                     config.timeSettings().maxEvents(),
@@ -81,41 +83,27 @@ public class Main {
             new LogWriter().writeLog(engine.getEventLog(), config.output().logDir());
 
         } catch (Exception e) {
-            // 修改点：使用更标准的错误输出，或者替换为 logger
             e.printStackTrace();
         }
     }
 
-    // --- 辅助方法重构 ---
+    // --- 辅助加载器 ---
 
-    /**
-     * 1. 无参构造函数加载器 (用于 Dispatcher)
-     */
     @SuppressWarnings("unchecked")
     private static <T> T loadPlugin(String className) throws Exception {
         if (className == null || className.isEmpty()) return null;
         return (T) Class.forName(className).getDeclaredConstructor().newInstance();
     }
 
-    /**
-     * 2. 单参数构造函数加载器 (用于 RoutePlanner)
-     */
     @SuppressWarnings("unchecked")
     private static <T> T loadPlugin(String className, Class<?> paramType, Object paramValue) throws Exception {
         if (className == null || className.isEmpty()) return null;
-        Class<?> clazz = Class.forName(className);
-        // 直接使用确定的构造函数，不再进行 Hack 判断
-        return (T) clazz.getConstructor(paramType).newInstance(paramValue);
+        return (T) Class.forName(className).getConstructor(paramType).newInstance(paramValue);
     }
 
-    /**
-     * 3. 多参数构造函数加载器 (用于 TaskGenerator)
-     * 重命名为 loadPluginMulti 以彻底解决 ambiguous method call 问题
-     */
     @SuppressWarnings("unchecked")
     private static <T> T loadPluginMulti(String className, Class<?>[] paramTypes, Object[] args) throws Exception {
         if (className == null || className.isEmpty()) return null;
-        Class<?> clazz = Class.forName(className);
-        return (T) clazz.getConstructor(paramTypes).newInstance(args);
+        return (T) Class.forName(className).getConstructor(paramTypes).newInstance(args);
     }
 }

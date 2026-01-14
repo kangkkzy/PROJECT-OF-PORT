@@ -22,6 +22,8 @@ public class SimulationEngine {
     }
 
     public List<SimEvent> getEventLog() { return eventLog; }
+    public void addEntity(entity.Entity e) { scheduler.registerEntity(e); }
+    public void addInstruction(Instruction.Instruction i) { scheduler.addInstruction(i); }
 
     public void start() {
         isRunning = true;
@@ -36,11 +38,11 @@ public class SimulationEngine {
 
             currentTime = Math.max(currentTime, event.getTimestamp());
 
-            // 仅记录关键日志
+            // 仅记录非步进的关键业务日志
             if (event.getType() != EventType.MOVE_STEP) {
                 eventLog.add(event);
                 System.out.printf("[%d] 处理事件: %s (实体: %s)\n",
-                        currentTime, event.getType(), event.getEntityId());
+                        currentTime, event.getType().getChineseName(), event.getEntityId());
             }
 
             dispatch(event);
@@ -59,7 +61,6 @@ public class SimulationEngine {
         String iid = event.getInstructionId();
         String pos = event.getTargetPosition();
 
-        // Java 21 Switch 表达式
         switch (event.getType()) {
             case TASK_GENERATION -> scheduler.handleTaskGeneration(now);
             case MOVE_STEP       -> scheduler.handleStepArrival(now, eid, iid, pos);

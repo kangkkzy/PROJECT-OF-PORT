@@ -1,10 +1,9 @@
 package core;
 
 import algo.SimpleScheduler;
-import entity.Entity; // 【关键修改】添加这一行
+import entity.Entity;
 import event.*;
 import Instruction.*;
-
 import java.util.*;
 
 public class SimulationEngine {
@@ -24,48 +23,50 @@ public class SimulationEngine {
         this.isRunning = false;
     }
 
-    public void addEntity(Entity entity) {
-        scheduler.registerEntity(entity);
-    }
+    public void addEntity(Entity entity) { scheduler.registerEntity(entity); }
+    public void addInstruction(Instruction instruction) { scheduler.addInstruction(instruction); }
 
-    public void addInstruction(Instruction instruction) {
-        scheduler.addInstruction(instruction);
+    // 【新增】暴露事件日志供外部保存
+    public List<SimEvent> getEventLog() {
+        return eventLog;
     }
 
     private void processEvent(SimEvent event) {
-        EventType type = event.getType();
-        String entityId = event.getEntityId();
-        String instructionId = event.getInstructionId();
-
-        // 委托给 Scheduler
-        switch (type) {
+        switch (event.getType()) {
+            case TASK_GENERATION:
+                scheduler.handleTaskGeneration(currentTime);
+                break;
+            case MOVE_STEP:
+                scheduler.handleStepArrival(currentTime, event.getEntityId(), event.getInstructionId(), event.getTargetPosition());
+                break;
             case QC_EXECUTION_COMPLETE:
-                scheduler.handleQCExecutionComplete(currentTime, entityId, instructionId);
+                scheduler.handleQCExecutionComplete(currentTime, event.getEntityId(), event.getInstructionId());
                 break;
             case QC_ARRIVAL:
-                scheduler.handleQCArrival(currentTime, entityId, instructionId, event.getTargetPosition());
+                scheduler.handleQCArrival(currentTime, event.getEntityId(), event.getInstructionId(), event.getTargetPosition());
                 break;
             case YC_EXECUTION_COMPLETE:
-                scheduler.handleYCExecutionComplete(currentTime, entityId, instructionId);
+                scheduler.handleYCExecutionComplete(currentTime, event.getEntityId(), event.getInstructionId());
                 break;
             case YC_ARRIVAL:
-                scheduler.handleYCArrival(currentTime, entityId, instructionId, event.getTargetPosition());
+                scheduler.handleYCArrival(currentTime, event.getEntityId(), event.getInstructionId(), event.getTargetPosition());
                 break;
             case IT_EXECUTION_COMPLETE:
-                scheduler.handleITExecutionComplete(currentTime, entityId, instructionId);
+                scheduler.handleITExecutionComplete(currentTime, event.getEntityId(), event.getInstructionId());
                 break;
             case IT_ARRIVAL:
-                scheduler.handleITArrival(currentTime, entityId, instructionId, event.getTargetPosition());
+                scheduler.handleITArrival(currentTime, event.getEntityId(), event.getInstructionId(), event.getTargetPosition());
                 break;
             default:
-                System.err.println("未知事件类型: " + type);
+                System.err.println("未知事件类型: " + event.getType());
         }
     }
 
     public void generateReport() {
         System.out.println("=== 仿真报告 ===");
         System.out.println("总运行时长: " + currentTime + "ms");
-        System.out.println("处理事件数: " + eventLog.size());
+        long meaningfulCount = eventLog.stream().filter(e -> e.getType() != EventType.MOVE_STEP).count();
+        System.out.println("处理关键业务事件数: " + meaningfulCount);
     }
 
     public void start() {
@@ -76,12 +77,18 @@ public class SimulationEngine {
         long maxSimulationTime = config.getSimulationDuration();
         int processedEvents = 0;
 
-        while (isRunning && currentTime < maxSimulationTime && !eventQueue.isEmpty()) {
+        while (isRunning && currentTime < maxSimulationTime && (!eventQueue.isEmpty() || scheduler.hasPendingEvents())) {
             SimEvent event = scheduler.getNextEvent();
             if (event == null) event = this.eventQueue.poll();
             if (event == null) break;
 
-            currentTime = event.getTimestamp();
+            if (event.getTimestamp() >= currentTime) currentTime = event.getTimestamp();
+
+            // 只打印关键业务事件
+            if (event.getType() != EventType.MOVE_STEP && event.getType() != EventType.TASK_GENERATION) {
+                System.out.println(">> 处理事件: " + event);
+            }
+
             processEvent(event);
             eventLog.add(event);
             processedEvents++;
@@ -99,7 +106,6 @@ public class SimulationEngine {
         private long simulationDuration;
         private long timeStep;
         private int maxEvents;
-
         public long getSimulationDuration() { return simulationDuration; }
         public void setSimulationDuration(long simulationDuration) { this.simulationDuration = simulationDuration; }
         public void setMaxEvents(int maxEvents) { this.maxEvents = maxEvents; }

@@ -29,6 +29,11 @@ public class PhysicsEngine {
         return occupier != null && !occupier.equals(selfEntityId);
     }
 
+    // 【新增】获取指定位置的占用者ID，用于上层判断是否为目标设备
+    public String getOccupier(String posKey) {
+        return cellLocks.get(posKey);
+    }
+
     // 锁定坐标资源
     public synchronized void lockResources(String entityId, List<String> posKeys) {
         List<String> allocated = entityAllocations.computeIfAbsent(entityId, k -> new ArrayList<>());

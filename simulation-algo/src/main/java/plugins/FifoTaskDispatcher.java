@@ -1,10 +1,7 @@
-// 文件: simulation-algo/src/main/java/plugins/FifoTaskDispatcher.java
 package plugins;
 
 import decision.TaskDispatcher;
 import entity.Entity;
-import entity.QC;
-import entity.YC;
 import Instruction.Instruction;
 import Instruction.InstructionType;
 import java.util.*;
@@ -39,13 +36,23 @@ public class FifoTaskDispatcher implements TaskDispatcher {
     @Override
     public void onNewTaskSubmitted(Instruction instruction) {
         String queueKey = "UNKNOWN";
-        if (instruction.getTargetQC() != null) queueKey = "QC";
-        else if (instruction.getTargetYC() != null) queueKey = "YC";
-        else if (instruction.getTargetIT() != null) queueKey = "IT";
+
+        // 【关键修改】修复任务分配优先级逻辑
+        // 如果任务指定了集卡(IT)，说明涉及运输，应优先放入 IT 队列供集卡领取
+        // 原先的逻辑是只要有 QC 就给 QC，导致集卡领不到任务
+        if (instruction.getTargetIT() != null) {
+            queueKey = "IT";
+        } else if (instruction.getTargetYC() != null) {
+            queueKey = "YC";
+        } else if (instruction.getTargetQC() != null) {
+            queueKey = "QC";
+        }
 
         List<Instruction> queue = instructionQueues.computeIfAbsent(queueKey, k -> new ArrayList<>());
         queue.add(instruction);
         queue.sort(Comparator.comparingInt(Instruction::getPriority).reversed());
+
+        System.out.println("[Dispatcher] 任务 " + instruction.getInstructionId() + " 已加入队列: " + queueKey);
     }
 
     @Override
@@ -142,13 +149,11 @@ public class FifoTaskDispatcher implements TaskDispatcher {
     }
 
     private long calculateDuration(Entity entity, Instruction instruction) {
-        // ... (保持原有逻辑不变)
         if (instruction.getExpectedDuration() > 0) return instruction.getExpectedDuration();
         return 1000;
     }
 
     private boolean isEntitySuitable(Entity entity, Instruction instruction) {
-        // ... (保持原有逻辑不变)
         switch (entity.getType()) {
             case QC: return entity.getId().equals(instruction.getTargetQC());
             case YC: return entity.getId().equals(instruction.getTargetYC());

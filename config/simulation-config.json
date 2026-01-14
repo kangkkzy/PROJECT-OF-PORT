@@ -1,12 +1,18 @@
 {
   "simulation": {
-    "name": "Port Simulation 2026"
+    "name": "Port Simulation Self-Driving"
   },
   "timeSettings": {
     "startTime": 0,
     "endTime": 3600000,
     "timeStep": 1000,
-    "maxEvents": 50000
+    "maxEvents": 100000
+  },
+  "mapSettings": {
+    "cellSize": 1.0
+  },
+  "output": {
+    "logDir": "D:/A大湾区/PORT/download"
   },
   "paths": {
     "mapFile": "data/map.json",
@@ -15,6 +21,7 @@
   },
   "strategies": {
     "routePlannerClass": "plugins.GridRoutePlanner",
-    "taskDispatcherClass": "plugins.FifoTaskDispatcher"
+    "taskDispatcherClass": "plugins.FifoTaskDispatcher",
+    "taskGeneratorClass": "plugins.RandomTaskGenerator"
   }
 }

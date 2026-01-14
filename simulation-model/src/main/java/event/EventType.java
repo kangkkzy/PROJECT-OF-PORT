@@ -1,6 +1,10 @@
 package event;
 
 public enum EventType {
+    // 系统内生事件
+    TASK_GENERATION("新任务生成"), // 仿真驱动的任务产生
+    MOVE_STEP("移动步进"),         // 用于Grid模式下的每一步移动
+
     // 桥吊事件
     QC_EXECUTION_COMPLETE("桥吊执行完成"),
     QC_ARRIVAL("桥吊到达目标位置"),
@@ -23,23 +27,7 @@ public enum EventType {
         return chineseName;
     }
 
-    public boolean isQCExecutionComplete() {
-        return this == QC_EXECUTION_COMPLETE;
-    }
-
-    public boolean isYCExecutionComplete() {
-        return this == YC_EXECUTION_COMPLETE;
-    }
-
-    public boolean isITExecutionComplete() {
-        return this == IT_EXECUTION_COMPLETE;
-    }
-
     public boolean isArrivalEvent() {
         return this == QC_ARRIVAL || this == YC_ARRIVAL || this == IT_ARRIVAL;
-    }
-
-    public boolean isExecutionCompleteEvent() {
-        return this == QC_EXECUTION_COMPLETE || this == YC_EXECUTION_COMPLETE || this == IT_EXECUTION_COMPLETE;
     }
 }

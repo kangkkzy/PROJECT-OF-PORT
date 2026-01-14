@@ -27,13 +27,12 @@
         <jackson.version>2.15.2</jackson.version>
         <junit.version>5.10.0</junit.version>
         <maven.compiler.plugin>3.11.0</maven.compiler.plugin>
-        <logback.version>1.4.11</logback.version>
-        <slf4j.version>2.0.9</slf4j.version>
+
+        <slf4j.version>2.0.12</slf4j.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
-            <!-- Jackson for JSON -->
             <dependency>
                 <groupId>com.fasterxml.jackson.core</groupId>
                 <artifactId>jackson-databind</artifactId>
@@ -55,20 +54,17 @@
                 <version>${jackson.version}</version>
             </dependency>
 
-            <!-- Logging -->
             <dependency>
                 <groupId>org.slf4j</groupId>
                 <artifactId>slf4j-api</artifactId>
                 <version>${slf4j.version}</version>
             </dependency>
             <dependency>
-                <groupId>ch.qos.logback</groupId>
-                <artifactId>logback-classic</artifactId>
-                <version>${logback.version}</version>
-                <scope>runtime</scope>
+                <groupId>org.slf4j</groupId>
+                <artifactId>slf4j-simple</artifactId>
+                <version>${slf4j.version}</version>
             </dependency>
 
-            <!-- Testing -->
             <dependency>
                 <groupId>org.junit.jupiter</groupId>
                 <artifactId>junit-jupiter</artifactId>

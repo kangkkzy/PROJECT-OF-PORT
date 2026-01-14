@@ -9,7 +9,6 @@ public class SimulationEngine {
     private final long endTime;
     private final int maxEvents;
     private final SimpleScheduler scheduler;
-
     private final PriorityQueue<SimEvent> eventQueue = new PriorityQueue<>();
     private final List<SimEvent> eventLog = new ArrayList<>();
     private long currentTime = 0;
@@ -22,8 +21,6 @@ public class SimulationEngine {
     }
 
     public List<SimEvent> getEventLog() { return eventLog; }
-    public void addEntity(entity.Entity e) { scheduler.registerEntity(e); }
-    public void addInstruction(Instruction.Instruction i) { scheduler.addInstruction(i); }
 
     public void start() {
         isRunning = true;
@@ -38,7 +35,6 @@ public class SimulationEngine {
 
             currentTime = Math.max(currentTime, event.getTimestamp());
 
-            // 仅记录非步进的关键业务日志
             if (event.getType() != EventType.MOVE_STEP) {
                 eventLog.add(event);
                 System.out.printf("[%d] 处理事件: %s (实体: %s)\n",
@@ -63,16 +59,18 @@ public class SimulationEngine {
 
         switch (event.getType()) {
             case TASK_GENERATION -> scheduler.handleTaskGeneration(now);
-            case MOVE_STEP       -> scheduler.handleStepArrival(now, eid, iid, pos);
 
-            case QC_EXECUTION_COMPLETE -> scheduler.handleQCExecutionComplete(now, eid, iid);
-            case QC_ARRIVAL            -> scheduler.handleQCArrival(now, eid, iid, pos);
+            // [修复] 适配 SimpleScheduler 修改，移除 iid 参数
+            case MOVE_STEP       -> scheduler.handleStepArrival(now, eid, pos);
 
-            case YC_EXECUTION_COMPLETE -> scheduler.handleYCExecutionComplete(now, eid, iid);
-            case YC_ARRIVAL            -> scheduler.handleYCArrival(now, eid, iid, pos);
+            case QC_EXECUTION_COMPLETE -> scheduler.handleCraneExecutionComplete(now, eid, iid);
+            case QC_ARRIVAL            -> scheduler.handleCraneArrival(now, eid, iid);
+
+            case YC_EXECUTION_COMPLETE -> scheduler.handleCraneExecutionComplete(now, eid, iid);
+            case YC_ARRIVAL            -> scheduler.handleCraneArrival(now, eid, iid);
 
             case IT_EXECUTION_COMPLETE -> scheduler.handleITExecutionComplete(now, eid, iid);
-            case IT_ARRIVAL            -> scheduler.handleITArrival(now, eid, iid, pos);
+            case IT_ARRIVAL            -> scheduler.handleITArrival(now, eid, iid);
 
             default -> System.err.println("丢弃未知事件: " + event.getType());
         }

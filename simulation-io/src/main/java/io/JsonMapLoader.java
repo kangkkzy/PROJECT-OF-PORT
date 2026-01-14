@@ -19,12 +19,15 @@ public class JsonMapLoader {
 
         GridMap gridMap = new GridMap((int)Math.ceil(maxX/cellSize) + 5, (int)Math.ceil(maxY/cellSize) + 5, cellSize);
 
-        // 2. 注册节点
+        // 2. 注册节点 (优化：读取 type)
         for (JsonNode n : root.path("nodes")) {
             String id = n.path("id").asText();
+            String type = n.path("type").asText(); // 读取类型 (QUAY, BAY等)
             int gx = (int)(n.path("x").asDouble() / cellSize);
             int gy = (int)(n.path("y").asDouble() / cellSize);
-            gridMap.registerNodeLocation(id, new Location(gx, gy));
+
+            Location loc = new Location(gx, gy);
+            gridMap.registerNode(id, type, loc);
             gridMap.setWalkable(gx, gy, true);
         }
 

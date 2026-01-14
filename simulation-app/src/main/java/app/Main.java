@@ -11,17 +11,22 @@ import Instruction.Instruction;
 import io.*;
 import map.GridMap;
 import physics.PhysicsEngine;
-import plugins.PhysicsTimeEstimator; // 或 GridTimeEstimator
 import plugins.GridTimeEstimator;
 import time.TimeEstimationModule;
+
+// 此时 Maven 已引入依赖，以下导入将正常工作
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 
 public class Main {
+    // 使用 SLF4J Logger
+    private static final Logger logger = LoggerFactory.getLogger(Main.class);
+
     public static void main(String[] args) {
         try {
             String configPath = args.length > 0 ? args[0] : "config/simulation-config.json";
-            // ConfigLoader 现在返回 Record
             var config = new ConfigLoader().load(configPath);
 
             // 1. 加载基础设施
@@ -34,7 +39,6 @@ public class Main {
 
             // 2. 初始化引擎组件
             PhysicsEngine physics = new PhysicsEngine(gridMap);
-            // 这里使用 GridTimeEstimator 以支持新的 operationTime 接口
             TimeEstimationModule timeModule = new GridTimeEstimator(gridMap);
 
             // 3. 加载策略插件
@@ -47,7 +51,6 @@ public class Main {
             // Dispatcher 同时实现 Allocator 和 TrafficController
             Object dispatcher = loadPlugin(config.strategies().taskDispatcherClass());
 
-            // Generator 需要多参数
             TaskGenerator generator = loadPluginMulti(
                     config.strategies().taskGeneratorClass(),
                     new Class<?>[]{GridMap.class, List.class},
@@ -83,7 +86,7 @@ public class Main {
             new LogWriter().writeLog(engine.getEventLog(), config.output().logDir());
 
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.error("仿真运行期间发生严重异常", e);
         }
     }
 
@@ -95,7 +98,8 @@ public class Main {
         return (T) Class.forName(className).getDeclaredConstructor().newInstance();
     }
 
-    @SuppressWarnings("unchecked")
+    // 压制 "参数值固定" 的警告，保留泛型灵活性
+    @SuppressWarnings({"unchecked", "SameParameterValue"})
     private static <T> T loadPlugin(String className, Class<?> paramType, Object paramValue) throws Exception {
         if (className == null || className.isEmpty()) return null;
         return (T) Class.forName(className).getConstructor(paramType).newInstance(paramValue);

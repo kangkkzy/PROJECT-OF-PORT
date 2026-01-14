@@ -1,80 +1,72 @@
 package Instruction;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class Instruction {
-    private String instructionId;
-    private InstructionType type;
+    // 必填字段直接映射
+    @JsonProperty("id") private String instructionId;
+    @JsonProperty("type") private InstructionType type;
     private String origin;
     private String destination;
+
+    // 业务字段
     private String containerId;
     private double containerWeight;
+    private int priority = 1;
+    private long expectedDuration;
+
+    // 目标设备指派
     private String targetQC;
     private String targetYC;
     private String targetIT;
-    private int priority;
-    private String status;
-    private Instant generateTime;
 
-    // 预期执行耗时 由算法层计算并填入
+    // 自动解包 parameters 到这个 Map
+    @JsonProperty("parameters")
+    private final Map<String, Object> extraParameters = new HashMap<>();
 
-    private long expectedDuration = 0;
+    // 运行时状态
+    private String status = "PENDING";
+    private Instant generateTime = Instant.now();
 
-    //扩展参数
-    private Map<String, Object> extraParameters = new HashMap<>();
+    // 空构造供 Jackson 使用
+    public Instruction() {}
 
-    public Instruction(String instructionId, InstructionType type, String origin, String destination) {
-        this.instructionId = instructionId;
+    public Instruction(String id, InstructionType type, String origin, String destination) {
+        this.instructionId = id;
         this.type = type;
         this.origin = origin;
         this.destination = destination;
-        this.priority = 1;
-        this.status = "PENDING";
-        this.generateTime = Instant.now();
     }
 
-    public int getPriority() { return priority; }
-    public void setPriority(int priority) { this.priority = priority; }
-    public long getExpectedDuration() { return expectedDuration; }
-    public void setExpectedDuration(long expectedDuration) { this.expectedDuration = expectedDuration; }
-    public void setExtraParameter(String key, Object value) { this.extraParameters.put(key, value); }
-    public Object getExtraParameter(String key) { return this.extraParameters.get(key); }
+    // Setters for JSON loading
+    public void setGenerateTime(long epochMillis) { this.generateTime = Instant.ofEpochMilli(epochMillis); }
+
+    // Getters & Setters
     public String getInstructionId() { return instructionId; }
-    public void setInstructionId(String instructionId) { this.instructionId = instructionId; }
     public InstructionType getType() { return type; }
-    public void setType(InstructionType type) { this.type = type; }
-    public String getStatus() { return status; }
-    public void setStatus(String status) { this.status = status; }
     public String getOrigin() { return origin; }
-    public void setOrigin(String origin) { this.origin = origin; }
     public String getDestination() { return destination; }
-    public void setDestination(String destination) { this.destination = destination; }
     public String getTargetQC() { return targetQC; }
-    public void setTargetQC(String targetQC) { this.targetQC = targetQC; }
     public String getTargetYC() { return targetYC; }
-    public void setTargetYC(String targetYC) { this.targetYC = targetYC; }
     public String getTargetIT() { return targetIT; }
-    public void setTargetIT(String targetIT) { this.targetIT = targetIT; }
-    public String getContainerId() { return containerId; }
-    public void setContainerId(String containerId) { this.containerId = containerId; }
     public double getContainerWeight() { return containerWeight; }
-    public void setContainerWeight(double weight) { this.containerWeight = weight; }
+    public String getContainerId() { return containerId; }
+    public int getPriority() { return priority; }
+    public long getExpectedDuration() { return expectedDuration; }
     public Instant getGenerateTime() { return generateTime; }
-    public void setGenerateTime(Instant generateTime) { this.generateTime = generateTime; }
 
-    public void assignToIT(String itId) {
-        this.targetIT = itId;
-        this.status = "ASSIGNED";
-    }
-
+    public void setStatus(String status) { this.status = status; }
     public void markInProgress() { this.status = "IN_PROGRESS"; }
     public void markCompleted() { this.status = "COMPLETED"; }
 
-    @Override
-    public String toString() {
-        return String.format("指令[%s] 类型:%s 优先级:%d 耗时:%dms",
-                instructionId, type.getChineseName(), priority, expectedDuration);
+    // 简单的任务指派逻辑
+    public void assignToIT(String itId) {
+        this.targetIT = itId;
+        this.status = "ASSIGNED";
     }
 }

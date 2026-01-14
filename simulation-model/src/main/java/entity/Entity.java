@@ -1,90 +1,73 @@
 package entity;
 
-import map.Location; // 关键：导入新类
+import com.fasterxml.jackson.annotation.JsonSubTypes;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import map.Location;
 import java.util.LinkedList;
 import java.util.List;
 
+@JsonTypeInfo(
+        use = JsonTypeInfo.Id.NAME,
+        include = JsonTypeInfo.As.PROPERTY,
+        property = "type",
+        visible = true
+)
+@JsonSubTypes({
+        @JsonSubTypes.Type(value = QC.class, name = "QC"),
+        @JsonSubTypes.Type(value = YC.class, name = "YC"),
+        @JsonSubTypes.Type(value = IT.class, name = "IT")
+})
 public abstract class Entity {
+    // 基础字段直接映射 JSON
     protected String id;
     protected EntityType type;
+    protected String initialPosition;
 
-    // 修改点1：新增 Location 类型的当前位置
+    // 运行时状态 (不序列化)
     protected Location currentLocation;
-    // 修改点2：新增初始节点ID字段
-    protected String initialNodeId;
-
     protected String currentInstructionId;
-    protected EntityStatus status;
-    protected long lastUpdateTime;
+    protected EntityStatus status = EntityStatus.IDLE;
+    protected List<Location> remainingPath = new LinkedList<>();
 
-    // 修改点3：路径列表改为 Location 类型
-    protected List<Location> remainingPath;
+    // 空构造器供 Jackson 使用
+    public Entity() {}
 
     public Entity(String id, EntityType type, String initialPosition) {
         this.id = id;
         this.type = type;
-        this.initialNodeId = initialPosition; // 保存初始ID
-        this.currentLocation = null;
-        this.currentInstructionId = null;
-        this.status = EntityStatus.IDLE;
-        this.lastUpdateTime = 0;
-        this.remainingPath = new LinkedList<>();
+        this.initialPosition = initialPosition;
     }
 
-    // Getters and Setters
+    // --- 简化后的 Getters/Setters ---
     public String getId() { return id; }
     public EntityType getType() { return type; }
+    public String getInitialNodeId() { return initialPosition; }
 
-    // 新增方法：SimpleScheduler 需要调用这个
     public Location getCurrentLocation() { return currentLocation; }
     public void setCurrentLocation(Location location) { this.currentLocation = location; }
 
-    // 新增方法：SimpleScheduler 需要调用这个
-    public String getInitialNodeId() { return initialNodeId; }
+    public String getCurrentInstructionId() { return currentInstructionId; }
+    public void setCurrentInstructionId(String id) { this.currentInstructionId = id; }
 
-    // 兼容旧方法：返回 String 类型的坐标
+    public EntityStatus getStatus() { return status; }
+    public void setStatus(EntityStatus status) { this.status = status; }
+
+    public void setRemainingPath(List<Location> path) {
+        this.remainingPath = (path != null) ? new LinkedList<>(path) : new LinkedList<>();
+    }
+    public List<Location> getRemainingPath() { return remainingPath; }
+    public boolean hasRemainingPath() { return remainingPath != null && !remainingPath.isEmpty(); }
+
+    public Location popNextStep() {
+        return hasRemainingPath() ? remainingPath.remove(0) : null;
+    }
+
+    // 兼容旧代码
     public String getCurrentPosition() {
         return currentLocation != null ? currentLocation.toKey() : null;
     }
 
-    // 兼容旧方法：允许设置 String 类型的坐标 (解析为 Location)
-    public void setCurrentPosition(String posKey) {
-        if (posKey != null) {
-            this.currentLocation = Location.parse(posKey);
-        }
-    }
-
-    public String getCurrentInstructionId() { return currentInstructionId; }
-    public void setCurrentInstructionId(String instructionId) { this.currentInstructionId = instructionId; }
-
-    public EntityStatus getStatus() { return status; }
-    public void setStatus(EntityStatus status) {
-        this.status = status;
-        this.lastUpdateTime = System.currentTimeMillis();
-    }
-
-    public boolean isAvailable() {
-        return status == EntityStatus.IDLE || status == EntityStatus.WAITING;
-    }
-
-    // 修改点4：路径操作全部改为 Location
-    public void setRemainingPath(List<Location> path) {
-        this.remainingPath = (path != null) ? new LinkedList<>(path) : new LinkedList<>();
-    }
-
-    public List<Location> getRemainingPath() { return remainingPath; }
-
-    public boolean hasRemainingPath() {
-        return remainingPath != null && !remainingPath.isEmpty();
-    }
-
-    public Location popNextStep() {
-        if (hasRemainingPath()) {
-            return remainingPath.remove(0);
-        }
-        return null;
-    }
-
+    // 抽象物理属性
     public abstract double getMaxSpeed();
     public abstract double getAcceleration();
     public abstract double getDeceleration();

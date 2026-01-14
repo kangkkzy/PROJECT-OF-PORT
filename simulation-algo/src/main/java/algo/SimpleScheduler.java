@@ -1,10 +1,8 @@
 package algo;
 
-import entity.Entity;
-import entity.EntityStatus;
-import Instruction.Instruction;
-import Instruction.InstructionType;
 import decision.*;
+import entity.*;
+import Instruction.*;
 import map.GridMap;
 import map.Location;
 import physics.PhysicsEngine;
@@ -14,28 +12,21 @@ import time.TimeEstimationModule;
 import java.util.*;
 
 public class SimpleScheduler {
-    // 仅持有必要的策略接口
     private final TaskAllocator taskAllocator;
     private final TrafficController trafficController;
     private final RoutePlanner routePlanner;
     private final TaskGenerator taskGenerator;
-
-    // 基础设施
     private final TimeEstimationModule timeModule;
     private final PhysicsEngine physicsEngine;
     private final GridMap gridMap;
 
     private final Map<String, Entity> entities = new HashMap<>();
     private final Map<String, Instruction> instructions = new HashMap<>();
-    private final PriorityQueue<SimEvent> eventQueue = new PriorityQueue<>();
+    private final Queue<SimEvent> pendingEvents = new LinkedList<>();
 
-    public SimpleScheduler(TaskAllocator taskAllocator,
-                           TrafficController trafficController,
-                           RoutePlanner routePlanner,
-                           TimeEstimationModule timeModule,
-                           PhysicsEngine physicsEngine,
-                           GridMap gridMap,
-                           TaskGenerator taskGenerator) {
+    public SimpleScheduler(TaskAllocator taskAllocator, TrafficController trafficController,
+                           RoutePlanner routePlanner, TimeEstimationModule timeModule,
+                           PhysicsEngine physicsEngine, GridMap gridMap, TaskGenerator taskGenerator) {
         this.taskAllocator = taskAllocator;
         this.trafficController = trafficController;
         this.routePlanner = routePlanner;
@@ -45,132 +36,240 @@ public class SimpleScheduler {
         this.taskGenerator = taskGenerator;
     }
 
-    // 1. 初始化逻辑：满足“根据状态添加事件”
     public void init() {
         for (Entity entity : entities.values()) {
-            // 询问插件：该实体该干什么？
             Instruction inst = taskAllocator.assignTask(entity);
             if (inst != null) {
-                // 如果插件给了任务，就开始执行
-                startInstruction(0, entity, inst);
+                instructions.put(inst.getInstructionId(), inst);
+                entity.setCurrentInstructionId(inst.getInstructionId());
+                evaluateStateAndAddEvents(0, entity, inst);
+            } else {
+                entity.setStatus(EntityStatus.IDLE);
             }
         }
-        // 启动任务生成器
         if (taskGenerator != null) {
-            eventQueue.add(new SimEvent(0, EventType.TASK_GENERATION, "SYSTEM"));
+            pendingEvents.add(new SimEvent(0, EventType.TASK_GENERATION, "SYSTEM"));
         }
     }
 
-    // 2. 运行时逻辑：处理移动
+    private void evaluateStateAndAddEvents(long currentTime, Entity entity, Instruction inst) {
+        Location currentLoc = entity.getCurrentLocation();
+        Location targetLoc = determineTargetLocation(entity, inst);
+
+        if (Objects.equals(currentLoc, targetLoc)) {
+            handleArrivalLogic(currentTime, entity, inst);
+        } else {
+            moveToTarget(currentTime, entity, targetLoc, inst);
+        }
+    }
+
+    private Location determineTargetLocation(Entity entity, Instruction inst) {
+        if (entity.getType() == EntityType.IT) {
+            IT it = (IT) entity;
+            if (!it.isLoaded() && inst.getType() == InstructionType.LOAD_TO_SHIP) {
+                return gridMap.getNodeLocation(inst.getOrigin());
+            } else {
+                return gridMap.getNodeLocation(inst.getDestination());
+            }
+        }
+        if (entity.getType() == EntityType.QC) return gridMap.getNodeLocation(inst.getDestination());
+        if (entity.getType() == EntityType.YC) return gridMap.getNodeLocation(inst.getOrigin());
+        return entity.getCurrentLocation();
+    }
+
+    // --- 事件消费逻辑 ---
+
+    public void handleQCExecutionComplete(long currentTime, String entityId, String instructionId) {
+        Entity qc = entities.get(entityId);
+        Instruction completedInst = instructions.get(instructionId);
+        if (completedInst != null) {
+            completedInst.markCompleted();
+            taskAllocator.onTaskCompleted(instructionId);
+        }
+
+        Instruction nextInst = taskAllocator.assignTask(qc);
+        if (nextInst == null) {
+            qc.setStatus(EntityStatus.IDLE);
+            return;
+        }
+
+        instructions.put(nextInst.getInstructionId(), nextInst);
+        qc.setCurrentInstructionId(nextInst.getInstructionId());
+
+        Location qcLoc = qc.getCurrentLocation();
+        Location nextTarget = gridMap.getNodeLocation(nextInst.getDestination());
+
+        if (Objects.equals(qcLoc, nextTarget)) {
+            Entity it = findEntity(nextInst.getTargetIT());
+            if (checkWait(it, qcLoc)) scheduleJointExecution(currentTime, qc, it, nextInst);
+            else qc.setStatus(EntityStatus.WAITING);
+        } else {
+            moveToTarget(currentTime, qc, nextTarget, nextInst);
+        }
+    }
+
+    public void handleQCArrival(long currentTime, String entityId, String instructionId, String targetPosKey) {
+        Entity qc = entities.get(entityId);
+        qc.setStatus(EntityStatus.IDLE);
+        Instruction inst = instructions.get(instructionId);
+
+        Entity it = findEntity(inst.getTargetIT());
+        if (checkWait(it, Location.parse(targetPosKey))) scheduleJointExecution(currentTime, qc, it, inst);
+        else qc.setStatus(EntityStatus.WAITING);
+    }
+
+    public void handleYCExecutionComplete(long currentTime, String entityId, String instructionId) {
+        Entity yc = entities.get(entityId);
+        Instruction nextInst = taskAllocator.assignTask(yc);
+        if (nextInst == null) {
+            yc.setStatus(EntityStatus.IDLE);
+            return;
+        }
+
+        instructions.put(nextInst.getInstructionId(), nextInst);
+        yc.setCurrentInstructionId(nextInst.getInstructionId());
+
+        Location ycLoc = yc.getCurrentLocation();
+        Location nextTarget = gridMap.getNodeLocation(nextInst.getOrigin());
+
+        if (Objects.equals(ycLoc, nextTarget)) {
+            Entity it = findEntity(nextInst.getTargetIT());
+            if (checkWait(it, ycLoc)) scheduleJointExecution(currentTime, yc, it, nextInst);
+            else yc.setStatus(EntityStatus.WAITING);
+        } else {
+            moveToTarget(currentTime, yc, nextTarget, nextInst);
+        }
+    }
+
+    public void handleYCArrival(long currentTime, String entityId, String instructionId, String targetPosKey) {
+        Entity yc = entities.get(entityId);
+        yc.setStatus(EntityStatus.IDLE);
+        Instruction inst = instructions.get(instructionId);
+        Entity it = findEntity(inst.getTargetIT());
+        if (checkWait(it, Location.parse(targetPosKey))) scheduleJointExecution(currentTime, yc, it, inst);
+        else yc.setStatus(EntityStatus.WAITING);
+    }
+
+    public void handleITExecutionComplete(long currentTime, String entityId, String instructionId) {
+        IT it = (IT) entities.get(entityId);
+        Instruction inst = instructions.get(instructionId);
+        Location origin = gridMap.getNodeLocation(inst.getOrigin());
+
+        if (isAtLocation(it, origin)) {
+            it.setCurrentLoadWeight(inst.getContainerWeight());
+            moveToTarget(currentTime, it, gridMap.getNodeLocation(inst.getDestination()), inst);
+        } else {
+            it.clearLoad();
+            inst.markCompleted();
+            taskAllocator.onTaskCompleted(instructionId);
+
+            Instruction next = taskAllocator.assignTask(it);
+            if (next != null) {
+                instructions.put(next.getInstructionId(), next);
+                it.setCurrentInstructionId(next.getInstructionId());
+                evaluateStateAndAddEvents(currentTime, it, next);
+            } else {
+                it.setStatus(EntityStatus.IDLE);
+            }
+        }
+    }
+
+    public void handleITArrival(long currentTime, String entityId, String instructionId, String targetPosKey) {
+        Entity it = entities.get(entityId);
+        Instruction inst = instructions.get(instructionId);
+        Location loc = Location.parse(targetPosKey);
+
+        if (Objects.equals(loc, gridMap.getNodeLocation(inst.getDestination()))) {
+            Entity qc = findEntity(inst.getTargetQC());
+            if (checkWait(qc, loc)) scheduleJointExecution(currentTime, qc, it, inst);
+            else it.setStatus(EntityStatus.WAITING);
+        } else if (Objects.equals(loc, gridMap.getNodeLocation(inst.getOrigin()))) {
+            Entity yc = findEntity(inst.getTargetYC());
+            if (checkWait(yc, loc)) scheduleJointExecution(currentTime, yc, it, inst);
+            else it.setStatus(EntityStatus.WAITING);
+        }
+    }
+
+    // --- 辅助 ---
+
+    private boolean checkWait(Entity target, Location loc) {
+        return target != null && isAtLocation(target, loc) && target.getStatus() == EntityStatus.WAITING;
+    }
+
+    private void handleArrivalLogic(long currentTime, Entity entity, Instruction inst) {
+        if (entity.getType() == EntityType.QC) handleQCArrival(currentTime, entity.getId(), inst.getInstructionId(), entity.getCurrentPosition());
+        else if (entity.getType() == EntityType.YC) handleYCArrival(currentTime, entity.getId(), inst.getInstructionId(), entity.getCurrentPosition());
+        else if (entity.getType() == EntityType.IT) handleITArrival(currentTime, entity.getId(), inst.getInstructionId(), entity.getCurrentPosition());
+    }
+
+    private void moveToTarget(long currentTime, Entity entity, Location target, Instruction inst) {
+        entity.setStatus(EntityStatus.MOVING);
+        List<Location> path = routePlanner.searchRoute(entity.getCurrentLocation(), target);
+        entity.setRemainingPath(path);
+        processNextStep(currentTime, entity);
+    }
+
+    private void scheduleJointExecution(long currentTime, Entity crane, Entity it, Instruction inst) {
+        long duration = 20000; // 模拟耗时
+        crane.setStatus(EntityStatus.EXECUTING);
+        it.setStatus(EntityStatus.EXECUTING);
+        long finishTime = currentTime + duration;
+
+        EventType craneEvent = (crane.getType() == EntityType.QC) ? EventType.QC_EXECUTION_COMPLETE : EventType.YC_EXECUTION_COMPLETE;
+        pendingEvents.add(new SimEvent(finishTime, craneEvent, crane.getId(), inst.getInstructionId()));
+        pendingEvents.add(new SimEvent(finishTime, EventType.IT_EXECUTION_COMPLETE, it.getId(), inst.getInstructionId()));
+    }
+
     public void handleStepArrival(long currentTime, String entityId, String instructionId, String targetPosKey) {
         Entity entity = entities.get(entityId);
         if (entity == null) return;
 
-        // 更新物理位置
         Location targetLoc = targetPosKey != null ? Location.parse(targetPosKey) : entity.getCurrentLocation();
         Location oldLoc = entity.getCurrentLocation();
-
-        if (oldLoc != null && !oldLoc.equals(targetLoc)) {
-            physicsEngine.unlockSingleResource(entityId, oldLoc);
-        }
+        if (oldLoc != null && !oldLoc.equals(targetLoc)) physicsEngine.unlockSingleResource(entityId, oldLoc);
         entity.setCurrentLocation(targetLoc);
         entity.popNextStep();
 
-        // 询问下一步
-        processNextStep(currentTime, entity);
+        if (!entity.hasRemainingPath()) {
+            EventType type = switch (entity.getType()) {
+                case QC -> EventType.QC_ARRIVAL;
+                case YC -> EventType.YC_ARRIVAL;
+                case IT -> EventType.IT_ARRIVAL;
+            };
+            pendingEvents.add(new SimEvent(currentTime, type, entityId, instructionId, targetLoc.toKey()));
+        } else {
+            processNextStep(currentTime, entity);
+        }
     }
 
     private void processNextStep(long currentTime, Entity entity) {
-        // 询问插件：是否有交通管制（中断）？
         Instruction interrupt = trafficController.checkInterruption(entity);
-        if (interrupt != null) {
-            startInstruction(currentTime, entity, interrupt);
-            return;
-        }
-
-        // 如果路径走完了
-        if (!entity.hasRemainingPath()) {
-            handleInstructionComplete(currentTime, entity);
-            return;
-        }
+        if (interrupt != null) return;
 
         Location nextLoc = entity.getRemainingPath().get(0);
-
-        // 询问插件：遇到物理碰撞怎么办？
         if (physicsEngine.detectCollision(nextLoc, entity.getId())) {
-            String obstacle = physicsEngine.getOccupier(nextLoc);
-            // 这里还可以加入判断是否是目标对象的逻辑，这里从简
-            Instruction recovery = trafficController.resolveCollision(entity, obstacle);
-            if (recovery != null) {
-                startInstruction(currentTime, entity, recovery);
-                return;
-            }
+            Instruction recovery = trafficController.resolveCollision(entity, physicsEngine.getOccupier(nextLoc));
+            if (recovery != null) return;
         }
 
-        // 执行移动：这是 Scheduler 的本职工作（计算时间，添加事件）
         physicsEngine.lockResources(entity.getId(), Collections.singletonList(nextLoc));
         long duration = timeModule.estimateMovementTime(entity, Collections.singletonList(nextLoc));
 
-        // 产生新事件
-        eventQueue.add(new SimEvent(
-                currentTime + duration,
-                EventType.MOVE_STEP,
-                entity.getId(),
-                entity.getCurrentInstructionId(),
-                nextLoc.toKey()
+        pendingEvents.add(new SimEvent(
+                currentTime + duration, EventType.MOVE_STEP,
+                entity.getId(), entity.getCurrentInstructionId(), nextLoc.toKey()
         ));
     }
 
-    private void startInstruction(long currentTime, Entity entity, Instruction inst) {
-        instructions.put(inst.getInstructionId(), inst);
-        entity.setCurrentInstructionId(inst.getInstructionId());
-        inst.markInProgress();
-
-        if (inst.getType() == InstructionType.MOVE || inst.getType() == InstructionType.LOAD_TO_SHIP) {
-            // 询问插件：怎么走？
-            List<Location> path = routePlanner.searchRoute(
-                    Location.parse(inst.getOrigin()),
-                    Location.parse(inst.getDestination()) // 注意：Instruction内最好也存Location对象，这里假设做了转换
-            );
-            entity.setRemainingPath(path);
-            processNextStep(currentTime, entity);
-        } else if (inst.getType() == InstructionType.WAIT) {
-            // 执行等待
-            long duration = inst.getExpectedDuration();
-            eventQueue.add(new SimEvent(currentTime + duration, EventType.IT_EXECUTION_COMPLETE, entity.getId(), inst.getInstructionId()));
-        }
-    }
-
-    private void handleInstructionComplete(long currentTime, Entity entity) {
-        Instruction inst = instructions.get(entity.getCurrentInstructionId());
-        if (inst != null) {
-            inst.markCompleted();
-            // 通知插件：任务完事了
-            taskAllocator.onTaskCompleted(inst.getInstructionId());
-        }
-
-        entity.setStatus(EntityStatus.IDLE);
-        entity.setCurrentInstructionId(null);
-
-        // 询问插件：还有新任务吗？
-        Instruction next = taskAllocator.assignTask(entity);
-        if (next != null) {
-            startInstruction(currentTime, entity, next);
-        }
-    }
-
-    // ... 其他 getter/setter 和注册方法保持不变
     public void registerEntity(Entity entity) { entities.put(entity.getId(), entity); }
-    public void addInstruction(Instruction task) {
-        instructions.put(task.getInstructionId(), task);
-        taskAllocator.onNewTaskSubmitted(task); // 通知插件
-    }
-    public SimEvent getNextEvent() { return eventQueue.poll(); }
-    public boolean hasPendingEvents() { return !eventQueue.isEmpty(); }
-    // 需要加上处理 TASK_GENERATION 的逻辑，调用 taskGenerator.generate()
+    public void addInstruction(Instruction task) { instructions.put(task.getInstructionId(), task); taskAllocator.onNewTaskSubmitted(task); }
+    public SimEvent getNextEvent() { return pendingEvents.poll(); }
+    public boolean hasPendingEvents() { return !pendingEvents.isEmpty(); }
     public void handleTaskGeneration(long now) {
         Instruction task = taskGenerator.generate(now);
         if(task != null) addInstruction(task);
-        eventQueue.add(new SimEvent(now + 5000, EventType.TASK_GENERATION, "SYSTEM"));
+        pendingEvents.add(new SimEvent(now + 5000, EventType.TASK_GENERATION, "SYSTEM"));
     }
+    private boolean isAtLocation(Entity e, Location loc) { return e.getCurrentLocation() != null && e.getCurrentLocation().equals(loc); }
+    private Entity findEntity(String id) { return id == null ? null : entities.get(id); }
 }

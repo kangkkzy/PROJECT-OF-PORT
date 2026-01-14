@@ -3,133 +3,119 @@ package app;
 import algo.SimpleScheduler;
 import core.SimulationEngine;
 import decision.RoutePlanner;
-import decision.TaskAllocator;   // 新增
+import decision.TaskAllocator;
 import decision.TaskGenerator;
-import decision.TrafficController; // 新增
+import decision.TrafficController;
 import entity.Entity;
 import Instruction.Instruction;
-import io.ConfigLoader;
-import io.ConfigLoader.SimulationConfig;
-import io.EntityLoader;
-import io.JsonMapLoader;
-import io.LogWriter;
-import io.TaskLoader;
+import io.*;
 import map.GridMap;
 import physics.PhysicsEngine;
 import plugins.PhysicsTimeEstimator;
 import time.TimeEstimationModule;
 
-import java.lang.reflect.Constructor;
 import java.util.List;
 
 public class Main {
-    private static final String DEFAULT_CONFIG_PATH = "config/simulation-config.json";
-
     public static void main(String[] args) {
         try {
-            System.out.println("启动港口仿真系统 (自驱动事件模式)...");
+            String configPath = args.length > 0 ? args[0] : "config/simulation-config.json";
+            var config = new ConfigLoader().load(configPath);
 
-            ConfigLoader configLoader = new ConfigLoader();
-            SimulationConfig simConfig = configLoader.loadConfig(getConfigFilePath(args));
+            // 1. 加载基础设施
+            GridMap gridMap = new JsonMapLoader().loadGridMap(
+                    config.paths().mapFile(),
+                    config.mapSettings().cellSize()
+            );
+            List<Entity> entities = new EntityLoader().loadFromFile(config.paths().entityFile());
+            List<Instruction> tasks = new TaskLoader().loadFromFile(config.paths().taskFile());
 
-            JsonMapLoader mapLoader = new JsonMapLoader();
-            GridMap gridMap = mapLoader.loadGridMap(simConfig.mapFile, simConfig.cellSize);
-            System.out.println("地图加载完成: " + gridMap.getWidth() + "x" + gridMap.getHeight());
-
-            EntityLoader entityLoader = new EntityLoader();
-            List<Entity> entities = entityLoader.loadFromFile(simConfig.entityFile);
-
-            TaskLoader taskLoader = new TaskLoader();
-            List<Instruction> initialTasks = taskLoader.loadFromFile(simConfig.taskFile, gridMap);
-
+            // 2. 初始化引擎组件
             PhysicsEngine physics = new PhysicsEngine(gridMap);
             TimeEstimationModule timeModule = new PhysicsTimeEstimator(gridMap);
 
-            RoutePlanner routePlanner = loadStrategy(simConfig.routePlannerClass, RoutePlanner.class, new Class<?>[]{GridMap.class}, new Object[]{gridMap});
+            // 3. 加载策略插件 (反射)
+            // 修改点：使用单参数加载方法
+            RoutePlanner routePlanner = loadPlugin(
+                    config.strategies().routePlannerClass(),
+                    GridMap.class,
+                    gridMap
+            );
 
-            // --- 核心修改：加载并转型 TaskDispatcher ---
-            // 1. 先作为 Object 加载实现类 (FifoTaskDispatcher)
-            Object dispatcherImpl = loadStrategy(simConfig.taskDispatcherClass, Object.class, null, null);
+            // 修改点：使用无参加载方法 (消除 null, null 调用)
+            Object dispatcher = loadPlugin(config.strategies().taskDispatcherClass());
 
-            // 2. 检查它是否同时实现了两个新接口
-            if (!(dispatcherImpl instanceof TaskAllocator) || !(dispatcherImpl instanceof TrafficController)) {
-                throw new IllegalArgumentException("配置的 taskDispatcherClass 必须同时实现 TaskAllocator 和 TrafficController 接口");
-            }
+            // 修改点：使用多参数加载方法 (消除歧义)
+            TaskGenerator generator = loadPluginMulti(
+                    config.strategies().taskGeneratorClass(),
+                    new Class<?>[]{GridMap.class, List.class},
+                    new Object[]{gridMap, entities}
+            );
 
-            // 3. 拆分引用
-            TaskAllocator taskAllocator = (TaskAllocator) dispatcherImpl;
-            TrafficController trafficController = (TrafficController) dispatcherImpl;
-
-            TaskGenerator taskGenerator = null;
-            if (simConfig.taskGeneratorClass != null) {
-                taskGenerator = loadStrategy(simConfig.taskGeneratorClass, TaskGenerator.class,
-                        new Class<?>[]{GridMap.class, List.class},
-                        new Object[]{gridMap, entities});
-            }
-
-            // --- 核心修改：使用新的 7 参数构造函数 ---
+            // 4. 组装调度器
             SimpleScheduler scheduler = new SimpleScheduler(
-                    taskAllocator,
-                    trafficController,
+                    (TaskAllocator) dispatcher,
+                    (TrafficController) dispatcher,
                     routePlanner,
                     timeModule,
                     physics,
                     gridMap,
-                    taskGenerator
+                    generator
             );
 
-            SimulationEngine.SimulationConfig engineConfig = new SimulationEngine.SimulationConfig();
-            engineConfig.setSimulationDuration(simConfig.endTime);
-            engineConfig.setMaxEvents(simConfig.maxEvents);
-            engineConfig.setTimeStep(simConfig.timeStep);
+            // 5. 注入数据
+            entities.forEach(scheduler::registerEntity);
+            tasks.forEach(scheduler::addInstruction);
+            scheduler.init(); // 触发初始状态评估
 
-            SimulationEngine engine = new SimulationEngine(engineConfig, scheduler);
+            // 6. 启动引擎
+            SimulationEngine engine = new SimulationEngine(
+                    config.timeSettings().endTime(),
+                    config.timeSettings().maxEvents(),
+                    scheduler
+            );
 
-            for (Entity entity : entities) engine.addEntity(entity);
-            for (Instruction task : initialTasks) engine.addInstruction(task);
+            engine.start();
 
-            scheduler.init();
-
-            Thread simThread = new Thread(() -> {
-                try {
-                    engine.start();
-                    engine.generateReport();
-                    LogWriter logWriter = new LogWriter();
-                    logWriter.writeLog(engine.getEventLog(), simConfig.logDir);
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            });
-            simThread.start();
-            simThread.join();
+            // 7. 保存日志
+            new LogWriter().writeLog(engine.getEventLog(), config.output().logDir());
 
         } catch (Exception e) {
+            // 修改点：使用更标准的错误输出，或者替换为 logger
             e.printStackTrace();
-            System.exit(1);
         }
     }
 
-    private static String getConfigFilePath(String[] args) { return args.length > 0 ? args[0] : DEFAULT_CONFIG_PATH; }
+    // --- 辅助方法重构 ---
 
+    /**
+     * 1. 无参构造函数加载器 (用于 Dispatcher)
+     */
     @SuppressWarnings("unchecked")
-    private static <T> T loadStrategy(String className, Class<T> interfaceType, Class<?>[] paramTypes, Object[] args) throws Exception {
+    private static <T> T loadPlugin(String className) throws Exception {
+        if (className == null || className.isEmpty()) return null;
+        return (T) Class.forName(className).getDeclaredConstructor().newInstance();
+    }
+
+    /**
+     * 2. 单参数构造函数加载器 (用于 RoutePlanner)
+     */
+    @SuppressWarnings("unchecked")
+    private static <T> T loadPlugin(String className, Class<?> paramType, Object paramValue) throws Exception {
         if (className == null || className.isEmpty()) return null;
         Class<?> clazz = Class.forName(className);
+        // 直接使用确定的构造函数，不再进行 Hack 判断
+        return (T) clazz.getConstructor(paramType).newInstance(paramValue);
+    }
 
-        // 修改检查逻辑：允许加载 Object 类型，或者严格检查接口实现
-        if (interfaceType != Object.class && !interfaceType.isAssignableFrom(clazz)) {
-            throw new IllegalArgumentException("类 " + className + " 未实现接口 " + interfaceType.getName());
-        }
-
-        try {
-            if (paramTypes != null && args != null) {
-                Constructor<?> constructor = clazz.getConstructor(paramTypes);
-                return (T) constructor.newInstance(args);
-            } else {
-                return (T) clazz.getDeclaredConstructor().newInstance();
-            }
-        } catch (NoSuchMethodException e) {
-            return (T) clazz.getDeclaredConstructor().newInstance();
-        }
+    /**
+     * 3. 多参数构造函数加载器 (用于 TaskGenerator)
+     * 重命名为 loadPluginMulti 以彻底解决 ambiguous method call 问题
+     */
+    @SuppressWarnings("unchecked")
+    private static <T> T loadPluginMulti(String className, Class<?>[] paramTypes, Object[] args) throws Exception {
+        if (className == null || className.isEmpty()) return null;
+        Class<?> clazz = Class.forName(className);
+        return (T) clazz.getConstructor(paramTypes).newInstance(args);
     }
 }

@@ -8,60 +8,43 @@ import Instruction.Instruction;
 import Instruction.InstructionType;
 import java.util.*;
 
+// 这个类现在同时充当“分配器”和“交通指挥”，符合单一插件类实现多接口的模式
 public class FifoTaskDispatcher implements TaskAllocator, TrafficController {
 
-    // --- 任务分配相关状态 ---
-    private final Map<EntityType, List<Instruction>> instructionQueues;
-    private final Set<String> assignedInstructionIds;
-
-    // --- 交通控制相关状态 ---
+    private final Map<EntityType, List<Instruction>> instructionQueues = new HashMap<>();
+    private final Set<String> assignedInstructionIds = new HashSet<>();
     private volatile boolean emergencyStop = false;
-    private static final long PAUSE_WAIT_DURATION = 1000L;
 
     public FifoTaskDispatcher() {
-        this.instructionQueues = new HashMap<>();
         for (EntityType type : EntityType.values()) {
-            this.instructionQueues.put(type, new ArrayList<>());
+            instructionQueues.put(type, new ArrayList<>());
         }
-        this.assignedInstructionIds = new HashSet<>();
     }
 
-    // ================= TaskAllocator 实现 =================
-
+    // --- TaskAllocator 实现 ---
     @Override
     public void onNewTaskSubmitted(Instruction instruction) {
-        EntityType targetType = EntityType.IT; // 默认为 IT
-        if (instruction.getTargetIT() != null) targetType = EntityType.IT;
-        else if (instruction.getTargetYC() != null) targetType = EntityType.YC;
-        else if (instruction.getTargetQC() != null) targetType = EntityType.QC;
-
-        List<Instruction> queue = instructionQueues.get(targetType);
-        synchronized (queue) {
-            queue.add(instruction);
-            queue.sort(Comparator.comparingInt(Instruction::getPriority).reversed());
+        EntityType targetType = determineTargetType(instruction);
+        synchronized (instructionQueues) {
+            instructionQueues.get(targetType).add(instruction);
+            // 简单的优先级排序决策
+            instructionQueues.get(targetType).sort(Comparator.comparingInt(Instruction::getPriority).reversed());
         }
-        System.out.println("[Allocator] 任务 " + instruction.getInstructionId() + " 加入队列: " + targetType);
     }
 
     @Override
     public Instruction assignTask(Entity entity) {
-        if (emergencyStop) {
-            // 修改点 1: getCurrentPositionStr() -> getCurrentPosition()
-            return createPauseInstruction(entity.getCurrentPosition());
-        }
+        if (emergencyStop) return null; // 决策：紧急停止时不分配新任务
 
         List<Instruction> queue = instructionQueues.get(entity.getType());
-        if (queue == null) return null;
-
-        synchronized (queue) {
+        synchronized (instructionQueues) {
             for (Instruction instruction : queue) {
                 if (assignedInstructionIds.contains(instruction.getInstructionId())) continue;
 
+                // 决策：判断该实体是否匹配任务要求（如指定ID）
                 if (isEntitySuitable(entity, instruction)) {
                     assignedInstructionIds.add(instruction.getInstructionId());
                     instruction.assignToIT(entity.getId());
-                    // 简单估算时长
-                    instruction.setExpectedDuration(instruction.getExpectedDuration() > 0 ? instruction.getExpectedDuration() : 1000);
                     return instruction;
                 }
             }
@@ -71,62 +54,48 @@ public class FifoTaskDispatcher implements TaskAllocator, TrafficController {
 
     @Override
     public void onTaskCompleted(String instructionId) {
-        if (instructionId.startsWith("WAIT") || instructionId.startsWith("EMERGENCY")) return;
         assignedInstructionIds.remove(instructionId);
-        // 清理队列
-        for (List<Instruction> q : instructionQueues.values()) {
-            synchronized (q) {
-                q.removeIf(i -> i.getInstructionId().equals(instructionId));
+        synchronized (instructionQueues) {
+            for (List<Instruction> queue : instructionQueues.values()) {
+                queue.removeIf(i -> i.getInstructionId().equals(instructionId));
             }
         }
     }
 
-    // ================= TrafficController 实现 =================
-
-    @Override
-    public void setEmergencyStop(boolean stop) {
-        this.emergencyStop = stop;
-    }
-
+    // --- TrafficController 实现 ---
     @Override
     public Instruction checkInterruption(Entity entity) {
+        // 决策：如果全局紧急停止，发出原地等待指令
         if (emergencyStop) {
-            // 如果紧急停止，且任务已分配，则释放任务回队列
-            String currentInstId = entity.getCurrentInstructionId();
-            if (currentInstId != null && assignedInstructionIds.contains(currentInstId)) {
-                assignedInstructionIds.remove(currentInstId);
-                // 重置任务状态逻辑略...
-                System.out.println("[Traffic] 任务 " + currentInstId + " 因紧急停止被中断");
-            }
-            // 修改点 2: getCurrentPositionStr() -> getCurrentPosition()
-            return createPauseInstruction(entity.getCurrentPosition());
+            Instruction wait = new Instruction("EMERGENCY_" + System.nanoTime(), InstructionType.WAIT, null, null);
+            wait.setExpectedDuration(1000);
+            return wait;
         }
         return null;
     }
 
     @Override
     public Instruction resolveCollision(Entity entity, String obstacleId) {
-        // 简单策略：等待 5 秒
-        Instruction wait = new Instruction("WAIT_COLLISION_" + System.nanoTime(), InstructionType.WAIT, "CURRENT", "CURRENT");
-        wait.setExpectedDuration(5000L);
+        // 决策：遇到冲突，简单的策略是等待 5秒
+        Instruction wait = new Instruction("COLLISION_WAIT_" + System.nanoTime(), InstructionType.WAIT, null, null);
+        wait.setExpectedDuration(5000);
         return wait;
     }
 
-    // ================= 辅助方法 =================
-
-    private Instruction createPauseInstruction(String pos) {
-        Instruction pause = new Instruction("EMERGENCY_" + System.nanoTime(), InstructionType.WAIT, pos, pos);
-        pause.setExpectedDuration(PAUSE_WAIT_DURATION);
-        pause.setPriority(999);
-        return pause;
+    // 辅助方法
+    private EntityType determineTargetType(Instruction i) {
+        if (i.getTargetQC() != null) return EntityType.QC;
+        if (i.getTargetYC() != null) return EntityType.YC;
+        return EntityType.IT;
     }
 
-    private boolean isEntitySuitable(Entity entity, Instruction instruction) {
-        switch (entity.getType()) {
-            case QC: return entity.getId().equals(instruction.getTargetQC());
-            case YC: return entity.getId().equals(instruction.getTargetYC());
-            case IT: return entity.getId().equals(instruction.getTargetIT());
-            default: return false;
-        }
+    private boolean isEntitySuitable(Entity e, Instruction i) {
+        // 简化的匹配逻辑
+        if (e.getType() == EntityType.QC && e.getId().equals(i.getTargetQC())) return true;
+        if (e.getType() == EntityType.YC && e.getId().equals(i.getTargetYC())) return true;
+        return e.getType() == EntityType.IT;
     }
+
+    // 供外部设置（非接口方法，可由Main调用或通过配置注入）
+    public void setEmergencyStop(boolean stop) { this.emergencyStop = stop; }
 }

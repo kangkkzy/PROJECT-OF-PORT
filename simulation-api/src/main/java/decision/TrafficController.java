@@ -2,14 +2,10 @@ package decision;
 import entity.Entity;
 import Instruction.Instruction;
 
-// 职责：负责交通管制和避障
 public interface TrafficController {
-    // 解决冲突：返回等待或重路由指令
+    // 决策：发生冲突（物理引擎检测到重叠）时，如何解决？(返回等待指令或重新规划指令)
     Instruction resolveCollision(Entity entity, String obstacleId);
 
-    // 检查中断：例如紧急停车
+    // 决策：每一步移动前，是否需要强制中断（如紧急停车、红绿灯）
     Instruction checkInterruption(Entity entity);
-
-    // 设置紧急停止状态
-    void setEmergencyStop(boolean stop);
 }

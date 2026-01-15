@@ -20,13 +20,18 @@ public class SimpleScheduler {
     private final GridMap gridMap;
     private final TaskGenerator taskGenerator;
 
+    // 配置参数 (替代硬编码)
+    private final long defaultWaitTime;
+    private final long taskGenInterval;
+
     private final Map<String, Entity> entities = new HashMap<>();
     private final Map<String, Instruction> instructions = new HashMap<>();
     private final Queue<SimEvent> pendingEvents = new PriorityQueue<>();
 
     public SimpleScheduler(TaskAllocator taskAllocator, TrafficController trafficController,
                            RoutePlanner routePlanner, TimeEstimationModule timeModule,
-                           PhysicsEngine physicsEngine, GridMap gridMap, TaskGenerator taskGenerator) {
+                           PhysicsEngine physicsEngine, GridMap gridMap, TaskGenerator taskGenerator,
+                           long defaultWaitTime, long taskGenInterval) {
         this.taskAllocator = taskAllocator;
         this.trafficController = trafficController;
         this.routePlanner = routePlanner;
@@ -34,6 +39,8 @@ public class SimpleScheduler {
         this.physicsEngine = physicsEngine;
         this.gridMap = gridMap;
         this.taskGenerator = taskGenerator;
+        this.defaultWaitTime = defaultWaitTime;
+        this.taskGenInterval = taskGenInterval;
     }
 
     public void registerEntity(Entity entity) {
@@ -50,6 +57,7 @@ public class SimpleScheduler {
     public SimEvent getNextEvent() { return pendingEvents.poll(); }
 
     public void init() {
+        // 1. 初始化物理位置
         for (Entity entity : entities.values()) {
             Location startLoc = gridMap.getNodeLocation(entity.getInitialNodeId());
             if (startLoc == null) startLoc = new Location(0, 0);
@@ -57,15 +65,27 @@ public class SimpleScheduler {
             entity.setStatus(EntityStatus.IDLE);
             physicsEngine.lockResources(entity.getId(), Collections.singletonList(startLoc));
         }
+
+        // 2. 根据设备当前状态（携带指令/位置）生成初始事件
         for (Entity entity : entities.values()) {
-            tryAssignment(0, entity);
+            // 如果实体初始化时就绑定了任务（例如从文件加载的状态），立即触发决策
+            if (entity.getCurrentInstructionId() != null) {
+                decisionMaking(0, entity);
+            } else {
+                // 否则尝试申请新任务
+                tryAssignment(0, entity);
+            }
         }
+
+        // 3. 启动任务生成器事件
         if (taskGenerator != null) {
             pendingEvents.add(new SimEvent(0, EventType.TASK_GENERATION, "SYSTEM"));
         }
     }
 
-    private void tryAssignment(long now, Entity entity) {
+    // --- 核心决策逻辑 ---
+
+    private void decisionMaking(long now, Entity entity) {
         if (entity.getStatus() == EntityStatus.MOVING || entity.getStatus() == EntityStatus.EXECUTING) return;
 
         Instruction inst = null;
@@ -81,7 +101,7 @@ public class SimpleScheduler {
 
         if (inst == null) {
             entity.setStatus(EntityStatus.IDLE);
-            // 关键：没任务时，看看脚下有没有人在等我
+            // 即使空闲，也检查是否有人在等我（被动激活）
             checkAndWakeUpPartners(now, entity);
             return;
         }
@@ -98,13 +118,19 @@ public class SimpleScheduler {
         }
     }
 
+    // 兼容旧接口
+    private void tryAssignment(long now, Entity entity) {
+        decisionMaking(now, entity);
+    }
+
     private void startMove(long now, Entity entity, Location target, Instruction inst) {
         List<Location> path = routePlanner.searchRoute(entity.getCurrentLocation(), target);
         if (path == null || path.isEmpty()) {
             if (entity.getCurrentLocation().equals(target)) {
                 handleArrivalLogic(now, entity, inst);
             } else {
-                pendingEvents.add(new SimEvent(now + 2000, EventType.MOVE_STEP,
+                // 等待后重试 (使用配置参数)
+                pendingEvents.add(new SimEvent(now + defaultWaitTime, EventType.MOVE_STEP,
                         entity.getId(), entity.getCurrentInstructionId(), entity.getCurrentLocation().toKey()));
             }
             return;
@@ -115,8 +141,15 @@ public class SimpleScheduler {
     }
 
     private void processNextMoveStep(long now, Entity entity) {
-        if (trafficController.checkInterruption(entity) != null) return;
+        // 1. 交通管制检查
+        Instruction interrupt = trafficController.checkInterruption(entity);
+        if (interrupt != null && interrupt.getType() == InstructionType.WAIT) {
+            pendingEvents.add(new SimEvent(now + interrupt.getExpectedDuration(), EventType.MOVE_STEP,
+                    entity.getId(), entity.getCurrentInstructionId(), entity.getCurrentLocation().toKey()));
+            return;
+        }
 
+        // 2. 到达检测
         if (!entity.hasRemainingPath()) {
             triggerArrivalEvent(now, entity);
             return;
@@ -126,18 +159,20 @@ public class SimpleScheduler {
         Instruction inst = instructions.get(entity.getCurrentInstructionId());
         Location goal = entity.getRemainingPath().get(entity.getRemainingPath().size() - 1);
 
-        // 协同豁免逻辑
+        // 3. 碰撞检测
         if (physicsEngine.detectCollision(next, entity.getId(), inst, goal)) {
             String occupier = physicsEngine.getOccupier(next);
+            // 如果不是协同伙伴，则等待
             if (!isCooperativeMove(entity, occupier)) {
                 Instruction resolution = trafficController.resolveCollision(entity, occupier);
-                long waitTime = (resolution != null) ? resolution.getExpectedDuration() : 1000;
+                long waitTime = (resolution != null) ? resolution.getExpectedDuration() : defaultWaitTime;
                 pendingEvents.add(new SimEvent(now + waitTime, EventType.MOVE_STEP,
                         entity.getId(), entity.getCurrentInstructionId(), entity.getCurrentLocation().toKey()));
                 return;
             }
         }
 
+        // 4. 执行移动
         Location stepTarget = entity.popNextStep();
         physicsEngine.lockResources(entity.getId(), Collections.singletonList(stepTarget));
         long stepTime = timeModule.estimateMovementTime(entity, Collections.singletonList(stepTarget));
@@ -157,13 +192,12 @@ public class SimpleScheduler {
         processNextMoveStep(now, entity);
     }
 
-    // --- 核心修复：更宽容的唤醒机制 ---
+    // --- 协同与状态机流转 ---
+
     private void checkAndWakeUpPartners(long now, Entity me) {
         for (Entity other : entities.values()) {
             if (other.getId().equals(me.getId())) continue;
-
-            // 只要位置重合，且对方是空闲或等待状态，都尝试握手
-            // 修复点：移除了 other.getStatus() == WAITING 的严格限制
+            // 只要位置重合，且对方处于可被唤醒状态（WAITING 或 IDLE）
             if (other.getCurrentLocation().equals(me.getCurrentLocation())) {
                 if (other.getStatus() == EntityStatus.WAITING || other.getStatus() == EntityStatus.IDLE) {
                     attemptJointExecution(now, me, other);
@@ -181,13 +215,13 @@ public class SimpleScheduler {
             Instruction iCrane = instructions.get(crane.getCurrentInstructionId());
             Instruction iIT = instructions.get(it.getCurrentInstructionId());
 
-            // 情况1：双方持有同一任务
+            // 1. 标准协同：双方持有同一任务
             if (iCrane != null && iIT != null && iCrane.getInstructionId().equals(iIT.getInstructionId())) {
                 if (canExecute(crane) && canExecute(it)) {
                     scheduleJointExecution(now, crane, it, iCrane);
                 }
             }
-            // 情况2：IT有任务，Crane空闲（被动激活）
+            // 2. 被动激活：IT 到达，Crane 空闲无任务 -> 强制绑定
             else if (iIT != null && iCrane == null && canExecute(crane) && canExecute(it)) {
                 String targetCraneId = (crane.getType() == EntityType.QC) ? iIT.getTargetQC() : iIT.getTargetYC();
                 if (crane.getId().equals(targetCraneId)) {
@@ -204,8 +238,6 @@ public class SimpleScheduler {
     public void handleCraneExecutionComplete(long now, String entityId, String instructionId) {
         Entity crane = entities.get(entityId);
         Instruction inst = instructions.get(instructionId);
-
-        // 标记该部分已完成，防止 YC 重复领取
         markPartComplete(crane, instructionId);
 
         if (crane.getType() == EntityType.QC && inst.getType() == InstructionType.LOAD_TO_SHIP) {
@@ -213,10 +245,10 @@ public class SimpleScheduler {
         }
 
         crane.setStatus(EntityStatus.IDLE);
-        // 先解除当前指令绑定，否则 tryAssignment 可能误判
         crane.setCurrentInstructionId(null);
 
-        tryAssignment(now, crane);
+        // 逻辑闭环：完成后立即决策下一步
+        decisionMaking(now, crane);
         checkAndWakeUpPartners(now, crane);
     }
 
@@ -227,18 +259,18 @@ public class SimpleScheduler {
 
         if ("BAY".equals(locType)) {
             it.setCurrentLoadWeight(inst.getContainerWeight());
+            // IT 继续持有任务去码头
         } else if ("QUAY".equals(locType)) {
             it.clearLoad();
-            it.setCurrentInstructionId(null);
-            // 只有在 QUAY 卸货后，集卡才算真正脱离任务
+            it.setCurrentInstructionId(null); // 释放任务
             markPartComplete(it, instructionId);
         }
 
         it.setStatus(EntityStatus.IDLE);
-        tryAssignment(now, it);
+        // 逻辑闭环：决策下一步
+        decisionMaking(now, it);
     }
 
-    // 调用 Dispatcher 的方法记录完成情况
     private void markPartComplete(Entity e, String iid) {
         if (taskAllocator instanceof plugins.FifoTaskDispatcher d) {
             d.markPartCompleted(iid, e.getId());
@@ -259,6 +291,7 @@ public class SimpleScheduler {
     private void scheduleJointExecution(long now, Entity crane, Entity it, Instruction inst) {
         inst.markInProgress(now);
         long duration = timeModule.estimateOperationTime(crane, inst);
+
         crane.setStatus(EntityStatus.EXECUTING);
         it.setStatus(EntityStatus.EXECUTING);
 
@@ -308,10 +341,11 @@ public class SimpleScheduler {
             addInstruction(task);
             System.out.println(">>> [" + now + "] 新任务: " + task.getInstructionId());
             for (Entity e : entities.values()) {
-                if (e.getStatus() == EntityStatus.IDLE) tryAssignment(now, e);
+                if (e.getStatus() == EntityStatus.IDLE) decisionMaking(now, e);
             }
         }
-        pendingEvents.add(new SimEvent(now + 15000, EventType.TASK_GENERATION, "SYSTEM"));
+        // 持续生成任务，直到外部停止或达到最大事件数
+        pendingEvents.add(new SimEvent(now + taskGenInterval, EventType.TASK_GENERATION, "SYSTEM"));
     }
 
     private boolean isCooperativeMove(Entity mover, String occupierId) {

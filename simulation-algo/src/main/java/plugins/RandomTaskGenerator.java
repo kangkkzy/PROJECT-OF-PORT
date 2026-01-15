@@ -17,20 +17,25 @@ public class RandomTaskGenerator implements TaskGenerator {
     private final Random random = new Random(12345);
     private int taskCounter = 1;
 
+    // 参数化配置
+    private final double generationProb;
+
     public RandomTaskGenerator(GridMap map, List<Entity> entities) {
         this.gridMap = map;
+        this.generationProb = 0.5; // 可以从外部注入
+
         for (Entity e : entities) {
             if (e.getType() == EntityType.QC) qcs.add(e);
             else if (e.getType() == EntityType.YC) ycs.add(e);
             else if (e.getType() == EntityType.IT) its.add(e);
         }
-        System.out.println("TaskGenerator Ready: QCs=" + qcs.size() + ", YCs=" + ycs.size() + ", ITs=" + its.size());
     }
 
     @Override
     public Instruction generate(long currentTime) {
+        // 使用配置的概率
         if (qcs.isEmpty() || its.isEmpty() || ycs.isEmpty()) return null;
-        if (random.nextDouble() > 0.3) return null; // 70% 概率生成
+        if (random.nextDouble() > generationProb) return null;
 
         String id = "AUTO_TASK_" + (taskCounter++);
 
@@ -48,7 +53,7 @@ public class RandomTaskGenerator implements TaskGenerator {
         task.setTargetYC(targetYC.getId());
         task.setTargetIT(targetIT.getId());
 
-        task.setPriority(random.nextInt(3) + 1);
+        task.setPriority(1);
         task.setGenerateTime(currentTime);
         task.setExpectedDuration(15000);
         task.setContainerWeight(20.0);

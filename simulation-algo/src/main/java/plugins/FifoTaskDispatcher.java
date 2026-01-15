@@ -10,17 +10,16 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class FifoTaskDispatcher implements TaskAllocator, TrafficController {
-    // 使用线程安全的集合
     private final List<Instruction> pendingTasks = Collections.synchronizedList(new ArrayList<>());
-    // 追踪每个任务已被哪些设备领用
     private final Map<String, Set<String>> taskAssignments = new ConcurrentHashMap<>();
+    // 新增：记录每个任务已完成的设备ID
+    private final Map<String, Set<String>> finishedParts = new ConcurrentHashMap<>();
 
     @Override
     public void onNewTaskSubmitted(Instruction instruction) {
         if (instruction == null || instruction.getInstructionId() == null) return;
         synchronized (pendingTasks) {
             pendingTasks.add(instruction);
-            // 优先级高的排前面
             pendingTasks.sort((t1, t2) -> Integer.compare(t2.getPriority(), t1.getPriority()));
         }
     }
@@ -29,26 +28,30 @@ public class FifoTaskDispatcher implements TaskAllocator, TrafficController {
     public Instruction assignTask(Entity entity) {
         synchronized (pendingTasks) {
             for (Instruction task : pendingTasks) {
+                String taskId = task.getInstructionId();
                 if ("COMPLETED".equals(task.getStatus())) continue;
 
-                String taskId = task.getInstructionId();
-                if (taskId == null) continue;
+                // 检查：如果该设备已经完成了它在这个任务中的部分，不要再返回这个任务
+                Set<String> finished = finishedParts.getOrDefault(taskId, Collections.emptySet());
+                if (finished.contains(entity.getId())) continue;
 
-                Set<String> assignedEntities = taskAssignments.computeIfAbsent(taskId, k -> new HashSet<>());
+                Set<String> assigned = taskAssignments.computeIfAbsent(taskId, k -> new HashSet<>());
 
-                // 修复核心BUG：如果该设备已经领过这个任务，允许它再次获取（用于多阶段执行）
-                if (assignedEntities.contains(entity.getId())) {
-                    return task;
-                }
+                // 允许重入（正在执行中继续请求）
+                if (assigned.contains(entity.getId())) return task;
 
-                // 检查设备是否匹配任务要求
-                if (isEntitySuitable(entity, task)) {
-                    assignedEntities.add(entity.getId());
+                if (isEntityMatch(entity, task)) {
+                    assigned.add(entity.getId());
                     return task;
                 }
             }
         }
         return null;
+    }
+
+    // 新增方法：标记部分完成
+    public void markPartCompleted(String instructionId, String entityId) {
+        finishedParts.computeIfAbsent(instructionId, k -> ConcurrentHashMap.newKeySet()).add(entityId);
     }
 
     @Override
@@ -57,6 +60,7 @@ public class FifoTaskDispatcher implements TaskAllocator, TrafficController {
         synchronized (pendingTasks) {
             pendingTasks.removeIf(t -> instructionId.equals(t.getInstructionId()));
             taskAssignments.remove(instructionId);
+            finishedParts.remove(instructionId);
         }
     }
 
@@ -66,16 +70,14 @@ public class FifoTaskDispatcher implements TaskAllocator, TrafficController {
     @Override
     public Instruction resolveCollision(Entity entity, String obstacleId) {
         Instruction wait = new Instruction("WAIT_" + System.nanoTime(), InstructionType.WAIT, null, null);
-        wait.setExpectedDuration(1000); // 减少等待时间，避免过度阻塞
+        wait.setExpectedDuration(1000);
         return wait;
     }
 
-    private boolean isEntitySuitable(Entity e, Instruction i) {
+    private boolean isEntityMatch(Entity e, Instruction i) {
         if (e.getType() == EntityType.QC) return e.getId().equals(i.getTargetQC());
         if (e.getType() == EntityType.YC) return e.getId().equals(i.getTargetYC());
-        if (e.getType() == EntityType.IT) {
-            return i.getTargetIT() == null || e.getId().equals(i.getTargetIT());
-        }
+        if (e.getType() == EntityType.IT) return i.getTargetIT() != null && e.getId().equals(i.getTargetIT());
         return false;
     }
 }

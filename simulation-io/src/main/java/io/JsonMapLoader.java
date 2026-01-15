@@ -10,7 +10,6 @@ public class JsonMapLoader {
     public GridMap loadGridMap(String filePath, double cellSize) throws Exception {
         JsonNode root = new ObjectMapper().readTree(new File(filePath));
 
-        // 1. 自动计算边界
         double maxX = 0, maxY = 0;
         for (JsonNode n : root.path("nodes")) {
             maxX = Math.max(maxX, n.path("x").asDouble());
@@ -19,10 +18,9 @@ public class JsonMapLoader {
 
         GridMap gridMap = new GridMap((int)Math.ceil(maxX/cellSize) + 5, (int)Math.ceil(maxY/cellSize) + 5, cellSize);
 
-        // 2. 注册节点 (优化：读取 type)
         for (JsonNode n : root.path("nodes")) {
             String id = n.path("id").asText();
-            String type = n.path("type").asText(); // 读取类型 (QUAY, BAY等)
+            String type = n.has("type") ? n.path("type").asText() : "UNKNOWN";
             int gx = (int)(n.path("x").asDouble() / cellSize);
             int gy = (int)(n.path("y").asDouble() / cellSize);
 
@@ -31,7 +29,6 @@ public class JsonMapLoader {
             gridMap.setWalkable(gx, gy, true);
         }
 
-        // 3. 简单的连线逻辑
         for (JsonNode s : root.path("segments")) {
             Location from = gridMap.getNodeLocation(s.path("from").asText());
             Location to = gridMap.getNodeLocation(s.path("to").asText());

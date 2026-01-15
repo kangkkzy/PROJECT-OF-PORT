@@ -1,5 +1,6 @@
 package physics;
 
+import Instruction.Instruction;
 import map.GridMap;
 import map.Location;
 import java.util.*;
@@ -7,32 +8,61 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class PhysicsEngine {
     private final GridMap gridMap;
-    // Location 是 Record，自动实现了正确的 equals/hashCode，可用作 Key
-    private final Map<Location, String> cellLocks = new ConcurrentHashMap<>();
-    private final Map<String, List<Location>> entityAllocations = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Location, Set<String>> cellLocks = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Set<Location>> entityAllocations = new ConcurrentHashMap<>();
 
-    public PhysicsEngine(GridMap gridMap) { this.gridMap = gridMap; }
+    public PhysicsEngine(GridMap gridMap) {
+        this.gridMap = gridMap;
+    }
+
+    public void lockResources(String entityId, List<Location> locations) {
+        if (locations == null || locations.isEmpty()) return;
+        synchronized (this) {
+            for (Location loc : locations) {
+                cellLocks.computeIfAbsent(loc, k -> ConcurrentHashMap.newKeySet()).add(entityId);
+            }
+            entityAllocations.computeIfAbsent(entityId, k -> new HashSet<>()).addAll(locations);
+        }
+    }
+
+    public void unlockSingleResource(String entityId, Location loc) {
+        synchronized (this) {
+            Set<String> occupiers = cellLocks.get(loc);
+            if (occupiers != null) {
+                occupiers.remove(entityId);
+                if (occupiers.isEmpty()) cellLocks.remove(loc);
+            }
+            entityAllocations.getOrDefault(entityId, Collections.emptySet()).remove(loc);
+        }
+    }
 
     public boolean detectCollision(Location targetLoc, String selfId) {
-        String occupier = cellLocks.get(targetLoc);
-        return occupier != null && !occupier.equals(selfId);
+        return detectCollision(targetLoc, selfId, null, null);
     }
 
-    public String getOccupier(Location loc) { return cellLocks.get(loc); }
+    public boolean detectCollision(Location targetLoc, String selfId, Instruction inst, Location goal) {
+        if (!gridMap.isWalkable(targetLoc.x(), targetLoc.y())) return true;
 
-    public synchronized void lockResources(String entityId, List<Location> locations) {
-        List<Location> allocated = entityAllocations.computeIfAbsent(entityId, k -> new ArrayList<>());
-        for (Location loc : locations) {
-            cellLocks.put(loc, entityId);
-            allocated.add(loc);
+        Set<String> occupiers = cellLocks.get(targetLoc);
+        if (occupiers == null || occupiers.isEmpty()) return false;
+        if (occupiers.size() == 1 && occupiers.contains(selfId)) return false;
+
+        // 协同豁免
+        if (inst != null && targetLoc.equals(goal)) {
+            String locType = gridMap.getLocationType(goal);
+            String targetCraneId = "QUAY".equals(locType) ? inst.getTargetQC() : inst.getTargetYC();
+
+            // 如果该位置只有我的合作伙伴，允许进入
+            if (targetCraneId != null && occupiers.size() == 1 && occupiers.contains(targetCraneId)) return false;
+            // 如果只有我和合作伙伴，也允许
+            if (targetCraneId != null && occupiers.size() == 2 && occupiers.contains(targetCraneId) && occupiers.contains(selfId)) return false;
         }
+
+        return occupiers.stream().anyMatch(occ -> !occ.equals(selfId));
     }
 
-    public synchronized void unlockSingleResource(String entityId, Location loc) {
-        if (loc != null && entityId.equals(cellLocks.get(loc))) {
-            cellLocks.remove(loc);
-            List<Location> locs = entityAllocations.get(entityId);
-            if (locs != null) locs.remove(loc);
-        }
+    public String getOccupier(Location loc) {
+        Set<String> occupiers = cellLocks.get(loc);
+        return (occupiers != null && !occupiers.isEmpty()) ? occupiers.iterator().next() : null;
     }
 }

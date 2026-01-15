@@ -6,26 +6,23 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class Instruction {
-    // 修复：添加注解，映射 JSON 中的 "id" 字段
     @JsonProperty("id")
     private String instructionId;
 
     private InstructionType type;
     private String origin;
     private String destination;
-    private String containerId;
     private double containerWeight;
     private String targetQC;
     private String targetYC;
     private String targetIT;
     private int priority;
-    private String status = "PENDING"; // 默认状态
+    private String status = "PENDING";
     private Instant generateTime;
 
     private long startTime;
     private long endTime;
     private long expectedDuration = 0;
-    private Map<String, Object> extraParameters = new HashMap<>();
 
     public Instruction() {}
 
@@ -70,9 +67,6 @@ public class Instruction {
     public Instant getGenerateTime() { return generateTime; }
     public void setGenerateTime(Instant time) { this.generateTime = time; }
     public void setGenerateTime(long epochMillis) { this.generateTime = Instant.ofEpochMilli(epochMillis); }
-
-    public long getStartTime() { return startTime; }
-    public long getEndTime() { return endTime; }
 
     public long getExpectedDuration() { return expectedDuration; }
     public void setExpectedDuration(long d) { this.expectedDuration = d; }

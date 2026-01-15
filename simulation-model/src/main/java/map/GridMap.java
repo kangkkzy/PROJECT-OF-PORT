@@ -14,7 +14,7 @@ public class GridMap {
     private final Map<String, Location> idToLoc = new HashMap<>();
     private final Map<Location, String> locToId = new HashMap<>();
     private final Map<Location, String> locToType = new HashMap<>();
-    // 反向索引：类型 -> 节点ID列表
+    // 新增：类型索引
     private final Map<String, List<String>> typeToIds = new HashMap<>();
 
     private final boolean[][] walkable;
@@ -31,6 +31,7 @@ public class GridMap {
         locToId.put(loc, nodeId);
         if (type != null) {
             locToType.put(loc, type);
+            // 注册到类型索引
             typeToIds.computeIfAbsent(type, k -> new ArrayList<>()).add(nodeId);
         }
     }
@@ -38,14 +39,21 @@ public class GridMap {
     public Location getNodeLocation(String nodeId) { return idToLoc.get(nodeId); }
     public String getNodeId(Location loc) { return locToId.get(loc); }
     public String getLocationType(Location loc) { return locToType.getOrDefault(loc, "UNKNOWN"); }
+
+    // 新增：动态查询接口
     public List<String> getNodesByType(String type) { return typeToIds.getOrDefault(type, Collections.emptyList()); }
 
     public void setWalkable(int x, int y, boolean isWalkable) {
         if (isValid(x, y)) this.walkable[x][y] = isWalkable;
     }
 
-    public boolean isWalkable(int x, int y) { return isValid(x, y) && walkable[x][y]; }
+    public boolean isWalkable(int x, int y) {
+        return isValid(x, y) && walkable[x][y];
+    }
 
-    private boolean isValid(int x, int y) { return x >= 0 && x < width && y >= 0 && y < height; }
+    private boolean isValid(int x, int y) {
+        return x >= 0 && x < width && y >= 0 && y < height;
+    }
+
     public double getCellSize() { return cellSize; }
 }

@@ -6,7 +6,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class Instruction {
-    // 关键修复：映射 JSON 中的 "id" 到 instructionId
+    // 修复：添加注解，映射 JSON 中的 "id" 字段
     @JsonProperty("id")
     private String instructionId;
 
@@ -19,7 +19,7 @@ public class Instruction {
     private String targetYC;
     private String targetIT;
     private int priority;
-    private String status = "PENDING";
+    private String status = "PENDING"; // 默认状态
     private Instant generateTime;
 
     private long startTime;
@@ -69,7 +69,6 @@ public class Instruction {
 
     public Instant getGenerateTime() { return generateTime; }
     public void setGenerateTime(Instant time) { this.generateTime = time; }
-    // 兼容 JSON long 时间戳
     public void setGenerateTime(long epochMillis) { this.generateTime = Instant.ofEpochMilli(epochMillis); }
 
     public long getStartTime() { return startTime; }

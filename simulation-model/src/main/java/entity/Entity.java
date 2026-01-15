@@ -1,5 +1,6 @@
 package entity;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import map.Location;
@@ -18,9 +19,14 @@ import java.util.List;
         @JsonSubTypes.Type(value = IT.class, name = "IT")
 })
 public abstract class Entity {
-    // 基础字段直接映射 JSON
+    // 关键修复：显式映射 JSON 字段
+    @JsonProperty("id")
     protected String id;
+
+    @JsonProperty("type")
     protected EntityType type;
+
+    @JsonProperty("initialPosition")
     protected String initialPosition;
 
     // 运行时状态 (不序列化)
@@ -29,7 +35,6 @@ public abstract class Entity {
     protected EntityStatus status = EntityStatus.IDLE;
     protected List<Location> remainingPath = new LinkedList<>();
 
-    // 空构造器供 Jackson 使用
     public Entity() {}
 
     public Entity(String id, EntityType type, String initialPosition) {
@@ -38,7 +43,6 @@ public abstract class Entity {
         this.initialPosition = initialPosition;
     }
 
-    // --- 简化后的 Getters/Setters ---
     public String getId() { return id; }
     public EntityType getType() { return type; }
     public String getInitialNodeId() { return initialPosition; }
@@ -62,12 +66,6 @@ public abstract class Entity {
         return hasRemainingPath() ? remainingPath.remove(0) : null;
     }
 
-    // 兼容旧代码
-    public String getCurrentPosition() {
-        return currentLocation != null ? currentLocation.toKey() : null;
-    }
-
-    // 抽象物理属性
     public abstract double getMaxSpeed();
     public abstract double getAcceleration();
     public abstract double getDeceleration();

@@ -20,7 +20,8 @@ public class Main {
     public static void main(String[] args) {
         try {
             var loader = new ConfigLoader();
-            var config = loader.load(args.length > 0 ? args[0] : "config/simulation-config.json");
+            String configPath = args.length > 0 ? args[0] : "config/simulation-config.json";
+            var config = loader.load(configPath);
 
             GridMap gridMap = new JsonMapLoader().loadGridMap(config.paths().mapFile(), config.mapSettings().cellSize());
             List<Entity> entities = new EntityLoader().loadFromFile(config.paths().entityFile());
@@ -29,9 +30,12 @@ public class Main {
             PhysicsEngine physics = new PhysicsEngine(gridMap);
             TimeEstimationModule timeModule = new GridTimeEstimator(gridMap);
 
-            // 动态加载所有决策/分析插件
             RoutePlanner routePlanner = loadPlugin(config.strategies().routePlannerClass(), GridMap.class, gridMap);
-            Object dispatcher = loadPlugin(config.strategies().taskDispatcherClass());
+
+            Object dispatcherObj = loadPlugin(config.strategies().taskDispatcherClass());
+            TaskAllocator taskAllocator = (TaskAllocator) dispatcherObj;
+            TrafficController trafficController = (TrafficController) dispatcherObj;
+
             TaskGenerator generator = loadPluginMulti(config.strategies().taskGeneratorClass(),
                     new Class<?>[]{GridMap.class, List.class}, new Object[]{gridMap, entities});
 
@@ -39,13 +43,13 @@ public class Main {
             MetricsAnalyzer analyzer = loadPlugin(config.strategies().analyzerClass());
 
             SimpleScheduler scheduler = new SimpleScheduler(
-                    (TaskAllocator) dispatcher, (TrafficController) dispatcher,
+                    taskAllocator, trafficController,
                     routePlanner, timeModule, physics, gridMap, generator
             );
 
             entities.forEach(scheduler::registerEntity);
             tasks.forEach(scheduler::addInstruction);
-            // init 中会解析初始位置并尝试分配
+
             scheduler.init();
 
             SimulationEngine engine = new SimulationEngine(config.timeSettings().endTime(), config.timeSettings().maxEvents(), scheduler);
@@ -58,6 +62,7 @@ public class Main {
 
         } catch (Exception e) {
             logger.error("仿真运行失败", e);
+            e.printStackTrace();
         }
     }
 
@@ -68,7 +73,11 @@ public class Main {
 
     private static <T> T loadPlugin(String className, Class<?> paramType, Object paramValue) throws Exception {
         if (className == null || className.isEmpty()) return null;
-        return (T) Class.forName(className).getConstructor(paramType).newInstance(paramValue);
+        try {
+            return (T) Class.forName(className).getConstructor(paramType).newInstance(paramValue);
+        } catch (NoSuchMethodException e) {
+            return (T) Class.forName(className).getDeclaredConstructor().newInstance();
+        }
     }
 
     private static <T> T loadPluginMulti(String className, Class<?>[] paramTypes, Object[] args) throws Exception {

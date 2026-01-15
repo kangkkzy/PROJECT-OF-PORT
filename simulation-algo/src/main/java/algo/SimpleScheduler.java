@@ -37,15 +37,19 @@ public class SimpleScheduler {
     }
 
     public void registerEntity(Entity entity) { entities.put(entity.getId(), entity); }
+
     public void addInstruction(Instruction task) {
         instructions.put(task.getInstructionId(), task);
         taskAllocator.onNewTaskSubmitted(task);
     }
+
     public SimEvent getNextEvent() { return pendingEvents.poll(); }
-    public boolean hasPendingEvents() { return !pendingEvents.isEmpty(); }
 
     public void init() {
         for (Entity entity : entities.values()) {
+            // 修复：初始化实体的 Location
+            Location startLoc = gridMap.getNodeLocation(entity.getInitialNodeId());
+            entity.setCurrentLocation(startLoc);
             tryAssignment(0, entity);
         }
         if (taskGenerator != null) {
@@ -61,6 +65,7 @@ public class SimpleScheduler {
         }
         bindInstruction(entity, inst);
         Location target = getTargetLocation(entity, inst);
+
         if (Objects.equals(entity.getCurrentLocation(), target)) {
             handleArrivalLogic(now, entity, inst);
         } else {
@@ -92,8 +97,8 @@ public class SimpleScheduler {
         IT it = (IT) entities.get(entityId);
         Instruction inst = instructions.get(instructionId);
         Location loc = it.getCurrentLocation();
-        String type = gridMap.getLocationType(loc);
-        Entity crane = ("QUAY".equals(type)) ? entities.get(inst.getTargetQC()) : entities.get(inst.getTargetYC());
+        String locType = gridMap.getLocationType(loc);
+        Entity crane = ("QUAY".equals(locType)) ? entities.get(inst.getTargetQC()) : entities.get(inst.getTargetYC());
         if (isEntityAtAndWaiting(crane, loc)) scheduleJointExecution(now, crane, it, inst);
         else it.setStatus(EntityStatus.WAITING);
     }
@@ -156,11 +161,14 @@ public class SimpleScheduler {
 
     public void handleTaskGeneration(long now) {
         Instruction task = taskGenerator.generate(now);
-        if (task != null) addInstruction(task);
-        pendingEvents.add(new SimEvent(now + 5000, EventType.TASK_GENERATION, "SYSTEM"));
-        for (Entity e : entities.values()) {
-            if (e.getStatus() == EntityStatus.IDLE) tryAssignment(now, e);
+        if (task != null) {
+            addInstruction(task);
+            // 修复：生成任务后立即唤醒 IDLE 设备
+            for (Entity e : entities.values()) {
+                if (e.getStatus() == EntityStatus.IDLE) tryAssignment(now, e);
+            }
         }
+        pendingEvents.add(new SimEvent(now + 5000, EventType.TASK_GENERATION, "SYSTEM"));
     }
 
     private Location getTargetLocation(Entity e, Instruction i) {

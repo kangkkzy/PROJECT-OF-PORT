@@ -24,13 +24,14 @@ public class ConfigLoader {
             String routePlannerClass,
             String taskDispatcherClass,
             String taskGeneratorClass,
-            String validatorClass,   // 新增
-            String analyzerClass     // 新增
+            String validatorClass,
+            String analyzerClass
     ) {}
 
     public AppConfig load(String path) throws Exception {
         ObjectMapper mapper = new ObjectMapper();
         mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        // 关键：注册 JSR310 模块处理 Instant
         mapper.registerModule(new JavaTimeModule());
         return mapper.readValue(new File(path), AppConfig.class);
     }

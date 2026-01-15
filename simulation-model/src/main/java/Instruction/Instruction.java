@@ -19,8 +19,8 @@ public class Instruction {
     private Instant generateTime;
 
     // 性能分析核心字段
-    private long startTime;    // 任务开始执行的时间戳
-    private long endTime;      // 任务彻底完成的时间戳
+    private long startTime;
+    private long endTime;
     private long expectedDuration = 0;
     private Map<String, Object> extraParameters = new HashMap<>();
 
@@ -36,37 +36,34 @@ public class Instruction {
     }
 
     public String getInstructionId() { return instructionId; }
-    public void setInstructionId(String instructionId) { this.instructionId = instructionId; }
+    public void setInstructionId(String id) { this.instructionId = id; }
     public InstructionType getType() { return type; }
     public void setType(InstructionType type) { this.type = type; }
     public String getOrigin() { return origin; }
     public void setOrigin(String origin) { this.origin = origin; }
     public String getDestination() { return destination; }
-    public void setDestination(String destination) { this.destination = destination; }
-    public String getContainerId() { return containerId; }
-    public void setContainerId(String containerId) { this.containerId = containerId; }
+    public void setDestination(String dest) { this.destination = dest; }
     public double getContainerWeight() { return containerWeight; }
-    public void setContainerWeight(double containerWeight) { this.containerWeight = containerWeight; }
+    public void setContainerWeight(double weight) { this.containerWeight = weight; }
     public String getTargetQC() { return targetQC; }
-    public void setTargetQC(String targetQC) { this.targetQC = targetQC; }
+    public void setTargetQC(String id) { this.targetQC = id; }
     public String getTargetYC() { return targetYC; }
-    public void setTargetYC(String targetYC) { this.targetYC = targetYC; }
+    public void setTargetYC(String id) { this.targetYC = id; }
     public String getTargetIT() { return targetIT; }
-    public void setTargetIT(String targetIT) { this.targetIT = targetIT; }
+    public void setTargetIT(String id) { this.targetIT = id; }
     public int getPriority() { return priority; }
-    public void setPriority(int priority) { this.priority = priority; }
+    public void setPriority(int p) { this.priority = p; }
     public String getStatus() { return status; }
-    public void setStatus(String status) { this.status = status; }
+    public void setStatus(String s) { this.status = s; }
     public Instant getGenerateTime() { return generateTime; }
-    public void setGenerateTime(Instant generateTime) { this.generateTime = generateTime; }
+    public void setGenerateTime(Instant time) { this.generateTime = time; }
     public void setGenerateTime(long epochMillis) { this.generateTime = Instant.ofEpochMilli(epochMillis); }
     public long getStartTime() { return startTime; }
-    public void setStartTime(long startTime) { this.startTime = startTime; }
     public long getEndTime() { return endTime; }
-    public void setEndTime(long endTime) { this.endTime = endTime; }
     public long getExpectedDuration() { return expectedDuration; }
-    public void setExpectedDuration(long expectedDuration) { this.expectedDuration = expectedDuration; }
+    public void setExpectedDuration(long d) { this.expectedDuration = d; }
 
+    // 业务逻辑状态方法
     public void assignToIT(String itId) {
         this.targetIT = itId;
         this.status = "ASSIGNED";

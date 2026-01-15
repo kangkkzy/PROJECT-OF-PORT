@@ -10,21 +10,14 @@ public class DefaultMetricsAnalyzer implements MetricsAnalyzer {
     public Map<String, Object> analyze(List<SimEvent> events) {
         Map<String, Object> metrics = new LinkedHashMap<>();
 
-        // 1. 吞吐量分析
-        long totalTasks = events.stream()
+        // 1. 吞吐量统计
+        long throughput = events.stream()
                 .filter(e -> e.getType() == EventType.QC_EXECUTION_COMPLETE)
                 .count();
-        metrics.put("Throughput_Total_QC_Completed", totalTasks);
+        metrics.put("Total_Throughput", throughput);
 
-        // 2. 设备活跃度分析
-        Map<String, Long> eventCounts = new HashMap<>();
-        for (SimEvent e : events) {
-            eventCounts.put(e.getEntityId(), eventCounts.getOrDefault(e.getEntityId(), 0L) + 1);
-        }
-        metrics.put("Device_Activity_Count", eventCounts);
-
-        // 3. 仿真规模
-        metrics.put("Total_Event_Stream_Size", events.size());
+        // 2. 作业事件分布
+        metrics.put("Simulation_Event_Count", events.size());
 
         return metrics;
     }

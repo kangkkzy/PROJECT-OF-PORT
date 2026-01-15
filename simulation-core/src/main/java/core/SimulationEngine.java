@@ -13,9 +13,6 @@ public class SimulationEngine {
     private final SimpleScheduler scheduler;
     private final List<SimEvent> eventLog = new ArrayList<>();
     private long currentTime = 0;
-    private boolean isRunning = false;
-
-    // 新增分析组件
     private SimulationValidator validator;
     private MetricsAnalyzer analyzer;
 
@@ -29,36 +26,26 @@ public class SimulationEngine {
     public void setAnalyzer(MetricsAnalyzer a) { this.analyzer = a; }
 
     public void start() {
-        isRunning = true;
-        System.out.println(">>> 仿真引擎启动 | 截止时间: " + endTime + "ms");
-
-        while (isRunning && currentTime < endTime) {
+        System.out.println(">>> 仿真引擎启动...");
+        while (currentTime < endTime) {
             SimEvent event = scheduler.getNextEvent();
             if (event == null) break;
 
             currentTime = Math.max(currentTime, event.getTimestamp());
-            if (event.getType() != EventType.MOVE_STEP) {
-                eventLog.add(event);
-            }
+            if (event.getType() != EventType.MOVE_STEP) eventLog.add(event);
 
             dispatch(event);
-
             if (eventLog.size() >= maxEvents) break;
         }
 
-        System.out.println(">>> 核心仿真运行结束，开始数据自动化分析...");
-        runAnalysis();
-    }
-
-    private void runAnalysis() {
+        System.out.println(">>> 仿真计算结束，执行后置分析...");
         if (validator != null) {
-            System.out.println("--- [正确性自检报告] ---");
+            System.out.println("--- [正确性校验报告] ---");
             validator.validate(eventLog).forEach(msg -> System.out.println("  " + msg));
         }
         if (analyzer != null) {
-            System.out.println("--- [算法迭代 KPI 报告] ---");
-            Map<String, Object> kpis = analyzer.analyze(eventLog);
-            kpis.forEach((k, v) -> System.out.println("  " + k + ": " + v));
+            System.out.println("--- [KPI分析报告] ---");
+            analyzer.analyze(eventLog).forEach((k, v) -> System.out.println("  " + k + ": " + v));
         }
     }
 

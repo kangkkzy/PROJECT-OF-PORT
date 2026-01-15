@@ -19,7 +19,8 @@ public class Main {
 
     public static void main(String[] args) {
         try {
-            var config = new ConfigLoader().load(args.length > 0 ? args[0] : "config/simulation-config.json");
+            var loader = new ConfigLoader();
+            var config = loader.load(args.length > 0 ? args[0] : "config/simulation-config.json");
 
             GridMap gridMap = new JsonMapLoader().loadGridMap(config.paths().mapFile(), config.mapSettings().cellSize());
             List<Entity> entities = new EntityLoader().loadFromFile(config.paths().entityFile());
@@ -28,13 +29,12 @@ public class Main {
             PhysicsEngine physics = new PhysicsEngine(gridMap);
             TimeEstimationModule timeModule = new GridTimeEstimator(gridMap);
 
-            // 动态加载插件 (无硬编码)
+            // 动态加载所有决策/分析插件
             RoutePlanner routePlanner = loadPlugin(config.strategies().routePlannerClass(), GridMap.class, gridMap);
             Object dispatcher = loadPlugin(config.strategies().taskDispatcherClass());
             TaskGenerator generator = loadPluginMulti(config.strategies().taskGeneratorClass(),
                     new Class<?>[]{GridMap.class, List.class}, new Object[]{gridMap, entities});
 
-            // 加载分析与校验插件 (核心改进点)
             SimulationValidator validator = loadPlugin(config.strategies().validatorClass());
             MetricsAnalyzer analyzer = loadPlugin(config.strategies().analyzerClass());
 
@@ -45,6 +45,7 @@ public class Main {
 
             entities.forEach(scheduler::registerEntity);
             tasks.forEach(scheduler::addInstruction);
+            // init 中会解析初始位置并尝试分配
             scheduler.init();
 
             SimulationEngine engine = new SimulationEngine(config.timeSettings().endTime(), config.timeSettings().maxEvents(), scheduler);

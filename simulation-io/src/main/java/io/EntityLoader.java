@@ -3,6 +3,7 @@ package io;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import entity.Entity;
 import java.io.File;
 import java.util.List;
@@ -13,6 +14,7 @@ public class EntityLoader {
     public EntityLoader() {
         this.mapper = new ObjectMapper();
         this.mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        this.mapper.registerModule(new JavaTimeModule());
     }
 
     public List<Entity> loadFromFile(String filePath) throws Exception {

@@ -22,6 +22,8 @@
   "strategies": {
     "routePlannerClass": "plugins.GridRoutePlanner",
     "taskDispatcherClass": "plugins.FifoTaskDispatcher",
-    "taskGeneratorClass": "plugins.RandomTaskGenerator"
+    "taskGeneratorClass": "plugins.RandomTaskGenerator",
+    "validatorClass": "plugins.DefaultValidator",
+    "analyzerClass": "plugins.DefaultMetricsAnalyzer"
   }
 }
